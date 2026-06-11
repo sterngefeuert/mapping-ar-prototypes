@@ -57,6 +57,8 @@ let renderer, scene, camera, controls, grid, reticle, controller;
 let hitTestSource=null, hitTestSourceRequested=false;
 let placedAR=null, browserContent=null, septGroup=null;
 
+function pageBG(v){ document.documentElement.style.background=v; document.body.style.background=v; }
+
 init();
 
 async function init(){
@@ -67,6 +69,7 @@ async function init(){
 
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
   renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth,innerHeight); renderer.xr.enabled=true;
+  renderer.setClearColor(0x000000, 0);   // transparent canvas so the AR camera shows through
   document.body.appendChild(renderer.domElement);
 
   controls=new OrbitControls(camera, renderer.domElement);
@@ -100,12 +103,14 @@ async function init(){
 function enterBrowser(){
   if(placedAR){ scene.remove(placedAR); placedAR=null; }
   reticle.visible=false; grid.visible=true; controls.enabled=true; hint.hidden=true; septGroup=null;
+  pageBG('');                              // restore opaque page background for the browser preview
   if(!browserContent){ browserContent=makeContent(); browserContent.position.set(0,0,0); scene.add(browserContent); }
   septBtn.style.display='block'; septBtn.textContent='＋ Sept 1933 contrast';
 }
 function enterAR(){
   if(browserContent){ scene.remove(browserContent); browserContent=null; }
   grid.visible=false; controls.enabled=false; hint.hidden=false; septGroup=null;
+  pageBG('transparent');                   // let the AR camera show through (iOS XR Browser etc.)
   septBtn.style.display='none'; septBtn.textContent='＋ Sept 1933 contrast';
   msg.textContent='AR active — point at the ground, tap to place.';
 }
