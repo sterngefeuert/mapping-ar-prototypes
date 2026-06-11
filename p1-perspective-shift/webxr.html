@@ -20,6 +20,8 @@
   #panel b{color:#7cc4ff}
   #disc{position:absolute;left:12px;right:12px;top:74px;background:rgba(120,40,10,.72);padding:8px 12px;border-radius:8px;font-size:12.5px}
   #hint{position:absolute;left:12px;right:12px;bottom:90px;text-align:center;background:rgba(0,0,0,.6);padding:8px 12px;border-radius:8px}
+  #camBtn{position:absolute;left:12px;bottom:150px;pointer-events:auto;background:rgba(0,0,0,.8);color:#7cc4ff;
+          border:1px solid rgba(124,196,255,.4);border-radius:6px;padding:10px 14px;font:600 14px system-ui}
   .warn{color:#ffc266}
 </style>
 </head>
@@ -28,6 +30,7 @@
   <div id="panel"><b>Perspective shift</b> — <span id="msg">loading…</span></div>
   <div id="disc">⚠ Placeholder <b>synthetic</b> audio — not a historical recording. Abstract by design; the ethical rendering of the speaker standpoint is unresolved (see brief).</div>
   <div id="hint" hidden>Place the two standpoints, then move between them — the sound shifts with your position.</div>
+  <button id="camBtn">📷 Camera AR</button>
 </div>
 
 <script type="importmap">
@@ -40,12 +43,13 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { setupCameraAR } from '../libs/camera-ar.js';
 
-const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), disc=document.getElementById('disc');
+const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), disc=document.getElementById('disc'), camBtn=document.getElementById('camBtn');
 
 let renderer, scene, camera, controls, grid, reticle, controller, listener;
 let hitTestSource=null, hitTestSourceRequested=false;
-let placedAR=null, browserContent=null, audioArmed=false;
+let placedAR=null, browserContent=null, audioArmed=false, cameraAR=null;
 
 function pageBG(v){ document.documentElement.style.background=v; document.body.style.background=v; }
 
@@ -76,6 +80,11 @@ async function init(){
 
   // browser: arm audio on first interaction (autoplay policy needs a gesture)
   renderer.domElement.addEventListener('pointerdown', armAudio);
+
+  cameraAR = setupCameraAR({ renderer, scene, camera, controls, button: camBtn, getContent: makeContent,
+    onEnter: ()=>{ armAudio(); if(browserContent){ scene.remove(browserContent); browserContent=null; } grid.visible=false; reticle.visible=false;
+      hint.hidden=false; hint.textContent='Camera AR — rotate phone to look · drag to rotate · pinch to zoom.'; },
+    onExit: ()=>{ enterBrowser(); } });
 
   let arOK=false;
   if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
@@ -183,13 +192,17 @@ function render(_,frame){
       if(hits.length && !placedAR){ reticle.visible=true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
       else reticle.visible=false;
     }
-  } else if(controls){ controls.update(); }
+  } else if(cameraAR && cameraAR.active){ cameraAR.update(); }
+  else if(controls){ controls.update(); }
   renderer.render(scene,camera);
 }
 
 // ── AR framing gestures: 1-finger drag = rotate, pinch = zoom the placed content (clean screencasts) ──
 let _rx=null,_pinch=null,_bRot=0,_bScale=1;
-function arObj(){ return (renderer && renderer.xr.isPresenting && placedAR) ? placedAR : null; }
+function arObj(){
+  if(cameraAR && cameraAR.active && cameraAR.content) return cameraAR.content;
+  return (renderer && renderer.xr.isPresenting && placedAR) ? placedAR : null;
+}
 function _td(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
 addEventListener('touchstart',e=>{ const o=arObj(); if(!o) return;
   if(e.touches.length===1){ _rx=e.touches[0].clientX; _bRot=o.rotation.y; _pinch=null; }

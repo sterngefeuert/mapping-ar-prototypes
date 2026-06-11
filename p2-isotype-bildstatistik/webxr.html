@@ -20,6 +20,8 @@
   #hint{position:absolute;left:12px;right:12px;bottom:92px;text-align:center;background:rgba(20,18,16,.6);padding:8px 12px;border-radius:8px}
   #septBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;display:none;pointer-events:auto;
            background:#5d7382;color:#e9e3d5;border:none;border-radius:6px;padding:10px 16px;font:600 14px system-ui}
+  #camBtn{position:absolute;left:12px;bottom:150px;pointer-events:auto;background:rgba(20,18,16,.85);color:#e9e3d5;
+          border:1px solid #5d7382;border-radius:6px;padding:10px 14px;font:600 14px system-ui}
   .warn{color:#ffc266}
 </style>
 </head>
@@ -27,6 +29,7 @@
 <div id="overlay">
   <div id="panel"><b>Bildstatistik in place</b> — <span id="msg">loading…</span></div>
   <button id="septBtn">＋ Sept 1933 contrast</button>
+  <button id="camBtn">📷 Camera AR</button>
   <div id="hint" hidden>Point at the ground, tap to place the apparatus at 1:1. Walk among it.</div>
 </div>
 
@@ -40,8 +43,9 @@
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { setupCameraAR } from '../libs/camera-ar.js';
 
-const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), septBtn=document.getElementById('septBtn');
+const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), septBtn=document.getElementById('septBtn'), camBtn=document.getElementById('camBtn');
 const PAPER='#e9e3d5', BRICK='#9b3a2e', STEEL='#5d7382', GHOST='#b3ab99';
 
 const SYM={
@@ -55,7 +59,7 @@ const SYM={
 
 let renderer, scene, camera, controls, grid, reticle, controller;
 let hitTestSource=null, hitTestSourceRequested=false;
-let placedAR=null, browserContent=null, septGroup=null;
+let placedAR=null, browserContent=null, septGroup=null, cameraAR=null;
 
 function pageBG(v){ document.documentElement.style.background=v; document.body.style.background=v; }
 
@@ -83,6 +87,10 @@ async function init(){
 
   controller=renderer.xr.getController(0); controller.addEventListener('select',onSelect); scene.add(controller);
   septBtn.addEventListener('click',toggleSept);
+  cameraAR = setupCameraAR({ renderer, scene, camera, controls, button: camBtn, getContent: makeContent,
+    onEnter: ()=>{ if(browserContent){ scene.remove(browserContent); browserContent=null; } grid.visible=false; reticle.visible=false;
+      hint.hidden=false; hint.textContent='Camera AR — rotate phone to look · drag to rotate · pinch to zoom.'; septBtn.style.display='block'; },
+    onExit: ()=>{ enterBrowser(); } });
 
   let arOK=false;
   if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
@@ -172,7 +180,7 @@ function onSelect(){
   septBtn.style.display='block';
 }
 function toggleSept(){
-  const target=placedAR||browserContent; if(!target) return;
+  const target=(cameraAR&&cameraAR.active&&cameraAR.content)||placedAR||browserContent; if(!target) return;
   if(septGroup){ target.remove(septGroup); septGroup=null; septBtn.textContent='＋ Sept 1933 contrast'; }
   else { septGroup=makeSept(); target.add(septGroup); septBtn.textContent='－ hide Sept contrast'; }
 }
@@ -190,7 +198,8 @@ function render(_,frame){
       if(hits.length && !placedAR){ reticle.visible=true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
       else reticle.visible=false;
     }
-  } else if(controls){ controls.update(); }
+  } else if(cameraAR && cameraAR.active){ cameraAR.update(); }
+  else if(controls){ controls.update(); }
   renderer.render(scene,camera);
 }
 
