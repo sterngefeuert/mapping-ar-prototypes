@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>P2 — Bildstatistik in Place (sketch)</title>
+<!--
+  P2 SKETCH — the ISOTYPE *register*, applied to the verified data.
+
+  This is the 2-D content layer for the Neurath/Bildstatistik concept (see BRIEF.md).
+  It is NOT the AR build. Its job is to let Markus SEE the diagrammatic register that
+  candidate axis D7 is about, so the accept/fold/reject call can be made against a real
+  artifact rather than a description.
+
+  Honesty rules enacted here (CLAUDE.md + the brief's binding constraint):
+    - Every icon traces to a VERIFIED count (Ganahl 2024). No invented quantities.
+    - Estimates are labelled ESTIMATE. Gaps are shown as GAPS, not filled.
+    - It enacts "machinery, not magnitude": the critical argument is carried by the
+      apparatus (mics, trucks, the modest/undocumented PA), and crowd size — which
+      would re-stage the rally's spectacle — is left an explicit blank.
+    - The September Catholic Mass data is shown only as a clearly-marked DIFFERENT EVENT,
+      per the source-pack correction.
+
+  To register this board to the Schönbrunn parterre in AR, it becomes the textured
+  content placed by the WebXR skeleton in prototypes/_template/. That step is deferred;
+  the register is what needs deciding first.
+-->
+<style>
+  :root {
+    --paper:  #e9e3d5;   /* warm ISOTYPE off-white */
+    --ink:    #2a2723;   /* near-black, verified */
+    --brick:  #9b3a2e;   /* Arntz brick-red accent — the rally */
+    --steel:  #5d7382;   /* muted steel — the contrast event */
+    --ghost:  #b3ab99;   /* faded — presumed/undocumented */
+    --rule:   #c7bfae;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.4;
+  }
+  .sheet { max-width: 880px; margin: 0 auto; padding: 32px 28px 64px; }
+
+  .banner {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--brick); border: 1px solid var(--brick);
+    display: inline-block; padding: 3px 8px; margin-bottom: 20px;
+  }
+  h1 { font-size: 23px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { font-size: 13px; color: #6c6655; margin: 0 0 6px; }
+  .framing {
+    font-size: 13px; color: var(--ink); margin: 16px 0 28px;
+    border-left: 3px solid var(--brick); padding: 6px 0 6px 14px; max-width: 60ch;
+  }
+  .framing b { color: var(--brick); }
+
+  /* provenance key */
+  .key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 28px; font-size: 11px; }
+  .tag {
+    text-transform: uppercase; letter-spacing: .08em; font-size: 10px;
+    padding: 2px 7px; border-radius: 2px; white-space: nowrap;
+  }
+  .tag.verified { background: var(--ink);   color: var(--paper); }
+  .tag.estimate { background: transparent; color: var(--ink);  border: 1px solid var(--ink); }
+  .tag.gap      { background: transparent; color: #8a8472; border: 1px dashed var(--ghost); }
+  .tag.diff     { background: var(--steel); color: var(--paper); }
+
+  /* a statistical row */
+  .row { margin: 0 0 26px; }
+  .row-head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .row-title { font-size: 15px; font-weight: 600; }
+  .row-key { font-size: 11px; color: #6c6655; }
+  .icons { display: flex; flex-wrap: wrap; gap: 7px; align-items: flex-end; }
+  .icons svg { display: block; }
+  .count { font-size: 26px; font-weight: 700; margin-left: 6px; align-self: center; }
+  .count.brick { color: var(--brick); }
+  .count.steel { color: var(--steel); }
+
+  .note { font-size: 12px; color: #6c6655; margin-top: 7px; max-width: 64ch; }
+
+  .divider {
+    text-align: center; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--steel); margin: 40px 0 28px; position: relative;
+  }
+  .divider::before, .divider::after {
+    content: ""; position: absolute; top: 50%; width: 28%; height: 1px; background: var(--steel); opacity: .5;
+  }
+  .divider::before { left: 0; } .divider::after { right: 0; }
+
+  .gap-slot {
+    border: 1px dashed var(--ghost); color: #8a8472;
+    padding: 14px 16px; font-size: 13px; max-width: 60ch; border-radius: 3px;
+  }
+  .gap-slot b { color: var(--ink); }
+
+  footer { margin-top: 48px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 12px; color: #6c6655; }
+  footer .read { color: var(--ink); font-size: 13px; margin-bottom: 12px; max-width: 64ch; }
+  footer code { background: #00000010; padding: 1px 4px; border-radius: 2px; }
+  a { color: var(--brick); }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <span class="banner">Sketch · register only · not the AR build · not a product</span>
+
+  <h1>Bildstatistik in Place</h1>
+  <p class="sub">Türkenbefreiungsfeier of the Heimatschutz · Schönbrunn gardens · 14 May 1933</p>
+
+  <p class="framing">
+    Narrated in <b>Otto Neurath's pictorial idiom</b> — the <i>Wiener Methode der Bildstatistik</i>
+    that Red Vienna built to make society legible, and that the Austrofascists dismantled when
+    Neurath fled in 1934. Here it is turned back on the regime's own rally. The argument is carried
+    by the <b>apparatus of amplification</b>, not by crowd size: <b>one icon is one verified thing.</b>
+  </p>
+
+  <div class="key">
+    <span><span class="tag verified">Verified</span> &nbsp;documented count (Ganahl 2024)</span>
+    <span><span class="tag estimate">Estimate</span> &nbsp;approximate, marked as such</span>
+    <span><span class="tag gap">Gap</span> &nbsp;undocumented — shown empty, never filled</span>
+    <span><span class="tag diff">Different event</span> &nbsp;not 14 May — shown for contrast</span>
+  </div>
+
+  <!-- Rows are built in JS from a small data table so the provenance of every icon is explicit. -->
+  <div id="board"></div>
+
+  <footer>
+    <p class="read">
+      <b>The reading this board proposes (yours to accept or revise):</b> the rally's own voice was
+      acoustically <i>modest and under-documented</i> — six microphones, a presumed central speaker pair,
+      forty-five minutes of radio — while the machinery of <i>total</i> amplification (forty-eight
+      distributed loudspeakers for three hundred thousand) was built months later, for the Church.
+      The spectacle was manufactured incrementally. Attendance on 14 May is left blank on purpose:
+      counting it would re-stage the grandeur the rally was engineered to project.
+    </p>
+    <p>
+      Source: Ganahl, Simon (2024), “Mikes, Cables, Transmitters,” <i>medien &amp; zeit</i> 39(1), 4–9
+      — see <code>notes/sources/schoenbrunn-tuerkenbefreiungsfeier.md</code>. Concept &amp; dimension
+      values: <code>prototypes/p2-isotype-bildstatistik/BRIEF.md</code>. Candidate axis D7 (representational
+      register): <code>design-space/dimensions.md</code>.
+    </p>
+  </footer>
+
+</div>
+
+<!-- ─── ISOTYPE-style pictogram symbols (flat silhouettes, Arntz-inspired) ─── -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- person: classic ISOTYPE figure -->
+    <symbol id="ico-person" viewBox="0 0 20 30">
+      <circle cx="10" cy="5" r="4.4"/>
+      <path d="M10 10 C5.5 10 4 13 4 18 L4 30 L7.5 30 L7.5 21 L12.5 21 L12.5 30 L16 30 L16 18 C16 13 14.5 10 10 10 Z"/>
+    </symbol>
+    <!-- microphone: round head on a stand -->
+    <symbol id="ico-mic" viewBox="0 0 20 30">
+      <rect x="6" y="2" width="8" height="13" rx="4"/>
+      <rect x="9.2" y="15" width="1.6" height="9"/>
+      <rect x="4" y="24" width="12" height="2.4" rx="1.2"/>
+    </symbol>
+    <!-- newsreel camera: body + lens + film reel on top -->
+    <symbol id="ico-camera" viewBox="0 0 32 30">
+      <circle cx="9"  cy="6" r="4.2"/>
+      <circle cx="19" cy="6" r="4.2"/>
+      <rect x="4" y="12" width="20" height="13" rx="1.5"/>
+      <rect x="24" y="15" width="6" height="7"/>
+      <circle cx="14" cy="18.5" r="3.4" fill="var(--paper)"/>
+    </symbol>
+    <!-- sound truck: cab + box on wheels -->
+    <symbol id="ico-truck" viewBox="0 0 38 30">
+      <path d="M2 6 L24 6 L24 21 L2 21 Z"/>
+      <path d="M24 11 L31 11 L36 16 L36 21 L24 21 Z"/>
+      <circle cx="9"  cy="24" r="3.6"/>
+      <circle cx="30" cy="24" r="3.6"/>
+    </symbol>
+    <!-- radio set: box, dial, antenna -->
+    <symbol id="ico-radio" viewBox="0 0 28 30">
+      <line x1="20" y1="11" x2="26" y2="2" stroke="currentColor" stroke-width="1.6"/>
+      <rect x="3" y="11" width="20" height="15" rx="1.5"/>
+      <circle cx="9" cy="18.5" r="3.2" fill="var(--paper)"/>
+      <rect x="15" y="14" width="5" height="9" fill="var(--paper)"/>
+    </symbol>
+    <!-- loudspeaker horn -->
+    <symbol id="ico-speaker" viewBox="0 0 24 30">
+      <path d="M3 11 L9 11 L18 4 L18 26 L9 19 L3 19 Z"/>
+      <path d="M20 9 Q24 15 20 21" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<script>
+// ─── Data: every row traces to the source pack. `n` is the icon count actually rendered. ───
+// prov ∈ verified | estimate | gap | diff ;  color ∈ ink | brick | steel | ghost
+const ROWS = [
+  {
+    title: "Microphones on the terrace",
+    keyText: "1 icon = 1 microphone",
+    icon: "ico-mic", n: 6, w: 18, color: "brick", prov: "verified",
+    note: "~6 mics in a semicircle around the podium: carbon, a dynamic (prob. WE 618A), two Reisz, possibly a Selenophon."
+  },
+  {
+    title: "Recording &amp; broadcast apparatus on site",
+    keyText: "1 icon = 1 documented unit",
+    mixed: [ {icon:"ico-camera", w:30}, {icon:"ico-truck", w:34}, {icon:"ico-radio", w:24} ],
+    color: "brick", prov: "verified",
+    note: "Fox Movietone camera (Bell &amp; Howell 2709) · Selenophon optical-sound truck · RAVAG radio line to the broadcast centre."
+  },
+  {
+    title: "The rally's own loudspeakers",
+    keyText: "presumed central pair — exact PA undocumented",
+    icon: "ico-speaker", n: 2, w: 19, color: "ghost", prov: "gap", ghostIcons: true,
+    note: "Ganahl: the exact public-address system of 14 May 1933 “is documented neither in archives nor by the media of the time.” Shown faded because presumed, not counted."
+  },
+];
+
+// the September contrast event
+const CONTRAST = [
+  {
+    title: "Distributed loudspeakers — Catholic Mass, 10 Sept 1933",
+    keyText: "1 icon = 1 loudspeaker",
+    icon: "ico-speaker", n: 48, w: 15, color: "steel", prov: "diff",
+    note: "Czeija, Nissl &amp; Co. installed 48 loudspeakers on flagpoles, trees and the palace balcony — for a different event, ~4 months later."
+  },
+  {
+    title: "Attendance — Catholic Mass, 10 Sept 1933",
+    keyText: "1 icon = 10,000 people",
+    icon: "ico-person", n: 30, w: 16, color: "steel", prov: "diff", bigCount: "≈ 300,000",
+    note: "Shown only to scale the contrast. This is the September Mass, NOT the 14 May rally."
+  },
+];
+
+const board = document.getElementById('board');
+
+function iconRun(spec) {
+  const items = spec.mixed
+    ? spec.mixed
+    : Array.from({length: spec.n}, () => ({ icon: spec.icon, w: spec.w }));
+  return items.map(it => {
+    const h = Math.round(it.w * 30 / (it.icon === 'ico-camera' ? 32 : it.icon === 'ico-truck' ? 38 : it.icon === 'ico-radio' ? 28 : it.icon === 'ico-speaker' ? 24 : 20));
+    const fill = `var(--${spec.color})`;
+    const op = spec.ghostIcons ? ' opacity="0.55"' : '';
+    const dash = spec.ghostIcons ? ' stroke="var(--ghost)" stroke-width="1" stroke-dasharray="2 2"' : '';
+    return `<svg width="${it.w}" height="${h}" viewBox="0 0 ${it.icon==='ico-camera'?32:it.icon==='ico-truck'?38:it.icon==='ico-radio'?28:it.icon==='ico-speaker'?24:20} 30" fill="${fill}"${op}${dash}><use href="#${it.icon}"/></svg>`;
+  }).join('');
+}
+
+function tagFor(prov) {
+  const label = { verified:"Verified", estimate:"Estimate", gap:"Gap", diff:"Different event" }[prov];
+  return `<span class="tag ${prov}">${label}</span>`;
+}
+
+function renderRow(spec) {
+  const big = spec.bigCount
+    ? `<span class="count ${spec.color}">${spec.bigCount}</span>`
+    : (!spec.mixed && !spec.ghostIcons ? `<span class="count ${spec.color}">${spec.n}</span>` : '');
+  return `
+    <div class="row">
+      <div class="row-head">
+        <span class="row-title">${spec.title}</span>
+        ${tagFor(spec.prov)}
+        <span class="row-key">${spec.keyText}</span>
+      </div>
+      <div class="icons">${iconRun(spec)}${big}</div>
+      <div class="note">${spec.note}</div>
+    </div>`;
+}
+
+board.innerHTML =
+  ROWS.map(renderRow).join('') +
+  // the on-purpose blank: attendance on 14 May
+  `<div class="row">
+     <div class="row-head">
+       <span class="row-title">Attendance, 14 May 1933</span>
+       ${tagFor('gap')}
+       <span class="row-key">deliberately not counted</span>
+     </div>
+     <div class="gap-slot">
+       <b>No verified figure — and left blank by choice.</b> The sources describe Heimwehr from
+       every Austrian federal state, but give no reliable total. Counting the crowd here would
+       quantify the rally's grandeur, re-staging the very spectacle the event was built to project.
+       The blank <i>is</i> the statement.
+     </div>
+   </div>` +
+  `<div class="divider">A different event — for contrast only</div>` +
+  CONTRAST.map(renderRow).join('');
+</script>
+</body>
+</html>

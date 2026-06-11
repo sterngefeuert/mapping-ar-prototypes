@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>P2 — Bildstatistik in AR (spike)</title>
+<!--
+  P2 AR SPIKE — the ISOTYPE board, placed in space.
+
+  Builds on prototypes/_template/ (the WebXR geolocation skeleton). It rasterises the
+  Bildstatistik board (the same register as index.html) into a texture and:
+    • on Android+ARCore: places it as a world-locked vertical billboard ~2.5 m ahead,
+      via an immersive-ar session;
+    • on desktop / no-AR: shows a DRAGGABLE 3-D preview of the same billboard over a
+      neutral ground, so the spatial idea is visible WITHOUT an AR phone.
+
+  STATUS: spike. The desktop preview is verified (it renders here). The on-device AR
+  placement is NOT verifiable on macOS/iOS — it needs an Android+ARCore phone over HTTPS.
+  GPS→XR anchoring is still the skeleton's fixed-offset fallback (WebXR has no native geo
+  anchoring) — the board is placed relative to where you stand, not at a true coordinate.
+  See README.md and notes/stack-decision-memo.md.
+-->
+<style>
+  body { margin:0; background:#111; color:#eee; font-family:monospace; overflow:hidden; }
+  #status {
+    position:fixed; top:0; left:0; right:0; padding:10px 12px;
+    background:rgba(0,0,0,.75); z-index:100; font-size:13px; line-height:1.5;
+  }
+  #status .label{color:#aaa;} #status .value{color:#7cf;} #status .warn{color:#fc7;} #status .err{color:#f77;}
+  #enter-ar{
+    display:none; position:fixed; bottom:36px; left:50%; transform:translateX(-50%);
+    padding:15px 30px; font:16px monospace; background:#7cf; color:#000;
+    border:none; border-radius:4px; cursor:pointer; z-index:100;
+  }
+  canvas#gl{ display:block; width:100vw; height:100vh; }
+
+  /* desktop preview stage */
+  #preview{
+    display:none; position:fixed; inset:0; z-index:50;
+    background:radial-gradient(120% 90% at 50% 18%, #6c7a5e 0%, #47503c 45%, #23271d 100%);
+    perspective:1100px; cursor:grab; overflow:hidden;
+  }
+  #preview.dragging{ cursor:grabbing; }
+  #preview .ground{
+    position:absolute; left:-20%; right:-20%; bottom:-10%; height:55%;
+    background:linear-gradient(#3a4230, #232a1c);
+    transform:rotateX(72deg); transform-origin:bottom center; opacity:.85;
+  }
+  #board-plane{
+    position:absolute; top:50%; left:50%; width:360px;
+    transform-style:preserve-3d; will-change:transform;
+  }
+  #board-plane img{ width:100%; display:block; box-shadow:0 30px 60px rgba(0,0,0,.5); border-radius:2px; }
+  #preview .hint{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    font-size:12px; color:#cdd3c4; background:rgba(0,0,0,.4); padding:6px 12px; border-radius:3px; z-index:60;
+  }
+  #preview .badge{
+    position:fixed; top:64px; left:12px; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:#fc7; border:1px solid #fc7; padding:3px 8px; z-index:60;
+  }
+</style>
+</head>
+<body>
+
+<div id="status">
+  <div><span class="label">WebXR AR: </span><span id="xr-status" class="value">checking…</span></div>
+  <div><span class="label">Board texture: </span><span id="tex-status" class="value">building…</span></div>
+  <div id="geo-status-line"><span class="label">Geolocation: </span><span id="geo-status" class="value">checking…</span></div>
+  <div id="target-info"></div>
+</div>
+
+<button id="enter-ar">Place board in AR</button>
+<canvas id="gl"></canvas>
+
+<!-- Desktop fallback: draggable 3-D preview of the same billboard -->
+<div id="preview">
+  <div class="ground"></div>
+  <div id="board-plane"><img id="board-img" alt="ISOTYPE board preview" /></div>
+  <div class="badge">Non-AR preview · desktop</div>
+  <div class="hint">Drag to look around · real placement is on-site via Android AR</div>
+</div>
+
+<script>
+// ───────────────────────────────────────────────────────────────────────────
+//  1.  Placeholder site coordinate (same as the skeleton — unverified).
+// ───────────────────────────────────────────────────────────────────────────
+const TARGET = { lat:48.1836, lng:16.3127, label:"Schönbrunn Großer Parterre [placeholder — unverified]" };
+const PLACE_DIST_M = 2.5;     // how far ahead the billboard is placed
+const BOARD_W_M    = 1.4;     // billboard width in metres
+const BOARD_H_M    = 2.1;     // billboard height in metres
+const EYE_H_M      = 1.4;     // board centre height above the floor
+
+// ───────────────────────────────────────────────────────────────────────────
+//  2.  Build the ISOTYPE board as an SVG, rasterise to a <canvas> for texturing.
+//      Same register as index.html, pared to icons + short labels (AR reads sparse).
+// ───────────────────────────────────────────────────────────────────────────
+const TEX_W = 1024, TEX_H = 1536;
+const boardCanvas = document.createElement('canvas');
+boardCanvas.width = TEX_W; boardCanvas.height = TEX_H;
+
+const SYMBOLS = {
+  person:  {vb:"0 0 20 30", p:'<circle cx="10" cy="5" r="4.4"/><path d="M10 10 C5.5 10 4 13 4 18 L4 30 L7.5 30 L7.5 21 L12.5 21 L12.5 30 L16 30 L16 18 C16 13 14.5 10 10 10 Z"/>'},
+  mic:     {vb:"0 0 20 30", p:'<rect x="6" y="2" width="8" height="13" rx="4"/><rect x="9.2" y="15" width="1.6" height="9"/><rect x="4" y="24" width="12" height="2.4" rx="1.2"/>'},
+  camera:  {vb:"0 0 32 30", p:'<circle cx="9" cy="6" r="4.2"/><circle cx="19" cy="6" r="4.2"/><rect x="4" y="12" width="20" height="13" rx="1.5"/><rect x="24" y="15" width="6" height="7"/><circle cx="14" cy="18.5" r="3.4" fill="#e9e3d5"/>'},
+  truck:   {vb:"0 0 38 30", p:'<path d="M2 6 L24 6 L24 21 L2 21 Z"/><path d="M24 11 L31 11 L36 16 L36 21 L24 21 Z"/><circle cx="9" cy="24" r="3.6"/><circle cx="30" cy="24" r="3.6"/>'},
+  radio:   {vb:"0 0 28 30", p:'<line x1="20" y1="11" x2="26" y2="2" stroke="#9b3a2e" stroke-width="1.6"/><rect x="3" y="11" width="20" height="15" rx="1.5"/><circle cx="9" cy="18.5" r="3.2" fill="#e9e3d5"/><rect x="15" y="14" width="5" height="9" fill="#e9e3d5"/>'},
+  speaker: {vb:"0 0 24 30", p:'<path d="M3 11 L9 11 L18 4 L18 26 L9 19 L3 19 Z"/><path d="M20 9 Q24 15 20 21" fill="none" stroke="currentColor" stroke-width="1.6"/>'},
+};
+
+function ico(name, x, y, w, fill, opacity, stroke) {
+  const s = SYMBOLS[name]; const [,,vbw,vbh] = s.vb.split(' ').map(Number);
+  const h = w * vbh / vbw;
+  const st = stroke ? ` stroke="${stroke}" stroke-width="1" stroke-dasharray="2 2"` : '';
+  return `<svg x="${x}" y="${y-h}" width="${w}" height="${h}" viewBox="${s.vb}" fill="${fill}" color="${fill}" opacity="${opacity||1}"${st}>${s.p}</svg>`;
+}
+function strip(name, n, x, y, w, gap, fill, opacity, stroke) {
+  let out = '', cx = x;
+  for (let i=0;i<n;i++){ out += ico(name, cx, y, w, fill, opacity, stroke); cx += w + gap; }
+  return out;
+}
+const INK="#2a2723", BRICK="#9b3a2e", STEEL="#5d7382", GHOST="#b3ab99", PAPER="#e9e3d5";
+function label(t, x, y, size, color, weight){ return `<text x="${x}" y="${y}" font-family="Helvetica,Arial,sans-serif" font-size="${size}" fill="${color||INK}" font-weight="${weight||400}">${t}</text>`; }
+
+function buildBoardSVG() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${TEX_W}" height="${TEX_H}" viewBox="0 0 ${TEX_W} ${TEX_H}">
+    <rect width="${TEX_W}" height="${TEX_H}" fill="${PAPER}"/>
+    ${label("BILDSTATISTIK IN PLACE", 64, 96, 46, INK, 700)}
+    ${label("Türkenbefreiungsfeier · Schönbrunn · 14 May 1933", 64, 138, 26, "#6c6655")}
+    ${label("One icon = one verified object.", 64, 178, 22, BRICK, 600)}
+    <line x1="64" y1="208" x2="${TEX_W-64}" y2="208" stroke="${GHOST}"/>
+
+    ${label("Microphones on the terrace", 64, 268, 28, INK, 600)}
+    ${strip("mic", 6, 64, 340, 56, 14, BRICK, 1)}
+    ${label("6", 520, 332, 40, BRICK, 700)}
+
+    ${label("Recording &amp; broadcast apparatus", 64, 420, 28, INK, 600)}
+    ${ico("camera", 64, 500, 96, BRICK, 1)}${ico("truck", 188, 500, 110, BRICK, 1)}${ico("radio", 330, 500, 84, BRICK, 1)}
+    ${label("camera · sound-truck · radio line", 440, 480, 20, "#6c6655")}
+
+    ${label("The rally's own loudspeakers", 64, 580, 28, INK, 600)}
+    ${strip("speaker", 2, 64, 652, 64, 16, GHOST, 0.55, GHOST)}
+    ${label("presumed central pair — PA undocumented", 220, 624, 20, "#8a8472")}
+
+    <rect x="64" y="700" width="${TEX_W-128}" height="120" fill="none" stroke="${GHOST}" stroke-dasharray="6 5"/>
+    ${label("Attendance, 14 May — NOT counted", 88, 752, 26, INK, 600)}
+    ${label("Counting the crowd would re-stage the spectacle. The blank is the statement.", 88, 790, 20, "#6c6655")}
+
+    <line x1="64" y1="900" x2="${TEX_W-64}" y2="900" stroke="${STEEL}" stroke-dasharray="4 4"/>
+    ${label("A DIFFERENT EVENT — for contrast", 64, 940, 22, STEEL, 600)}
+
+    ${label("Distributed loudspeakers · Catholic Mass, 10 Sept 1933", 64, 1000, 26, INK, 600)}
+    ${(()=>{ // 48 speakers wrapped over rows
+      let out='', x=64, y=1064, w=30, gap=8, perRow=Math.floor((TEX_W-128+gap)/(w+gap));
+      for(let i=0;i<48;i++){ out+=ico("speaker", x, y, w, STEEL, 1); x+=w+gap; if((i+1)%perRow===0){ x=64; y+=w*30/24+8; } }
+      return out + label("48", TEX_W-150, 1064, 40, STEEL, 700);
+    })()}
+
+    ${label("Attendance · Catholic Mass — 1 icon = 10,000", 64, 1230, 26, INK, 600)}
+    ${(()=>{ let out='', x=64, y=1300, w=34, gap=8, perRow=Math.floor((TEX_W-260+gap)/(w+gap));
+      for(let i=0;i<30;i++){ out+=ico("person", x, y, w, STEEL, 1); x+=w+gap; if((i+1)%perRow===0){ x=64; y+=w*30/20+8; } }
+      return out + label("≈ 300,000", TEX_W-300, 1316, 36, STEEL, 700);
+    })()}
+
+    ${label("Source: Ganahl 2024, “Mikes, Cables, Transmitters.”  Sketch — register, not product.", 64, TEX_H-36, 18, "#8a8472")}
+  </svg>`;
+}
+
+let textureReady = false;
+const boardImg = document.getElementById('board-img');
+(function rasterise(){
+  const svg = buildBoardSVG();
+  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+  const img = new Image();
+  img.onload = () => {
+    boardCanvas.getContext('2d').drawImage(img, 0, 0, TEX_W, TEX_H);
+    boardImg.src = boardCanvas.toDataURL('image/png');   // feed the desktop preview too
+    textureReady = true;
+    setText('tex-status', 'ready', 'value');
+    if (glTex) uploadTexture();
+  };
+  img.onerror = () => setText('tex-status', 'failed to rasterise board', 'err');
+  img.src = url;
+})();
+
+// ───────────────────────────────────────────────────────────────────────────
+//  3.  UI helpers + geolocation (same behaviour as the skeleton).
+// ───────────────────────────────────────────────────────────────────────────
+function setText(id, msg, cls){ const el=document.getElementById(id); el.textContent=msg; el.className=cls; }
+const enterBtn = document.getElementById('enter-ar');
+
+if ('geolocation' in navigator) {
+  navigator.geolocation.watchPosition(
+    pos => {
+      const d = haversineM(pos.coords.latitude, pos.coords.longitude, TARGET.lat, TARGET.lng);
+      setText('geo-status', 'OK', 'value');
+      document.getElementById('target-info').innerHTML =
+        `<span class="label">Target: </span><span class="value">${TARGET.label}</span>` +
+        `<br><span class="label">Distance: </span><span class="value">${d.toFixed(0)} m</span> ` +
+        `<span class="label">(±${pos.coords.accuracy.toFixed(0)} m)</span>`;
+    },
+    err => setText('geo-status', `denied/unavailable (${err.message})`, 'warn'),
+    { enableHighAccuracy:true }
+  );
+} else setText('geo-status', 'not available', 'err');
+
+// ───────────────────────────────────────────────────────────────────────────
+//  4.  WebXR check → AR session, or desktop preview.
+// ───────────────────────────────────────────────────────────────────────────
+let xrSession=null, xrRefSpace=null, gl=null, glTex=null, prog=null, placed=false, modelMat=null;
+const canvas = document.getElementById('gl');
+
+(async function checkXR(){
+  if (!('xr' in navigator)) return showPreview('WebXR not supported in this browser');
+  try {
+    if (await navigator.xr.isSessionSupported('immersive-ar')) {
+      setText('xr-status', 'immersive-ar supported — tap to place', 'value');
+      enterBtn.style.display = 'block';
+      enterBtn.addEventListener('click', startAR);
+    } else showPreview('immersive-ar not supported on this device');
+  } catch(e){ showPreview('error checking AR: ' + e.message); }
+})();
+
+async function startAR(){
+  enterBtn.style.display='none';
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', { requiredFeatures:['local-floor'] });
+    xrSession.addEventListener('end', ()=>{ xrSession=null; placed=false; setText('xr-status','session ended','warn'); enterBtn.style.display='block'; });
+    gl = canvas.getContext('webgl', { xrCompatible:true });
+    await gl.makeXRCompatible();
+    xrSession.updateRenderState({ baseLayer: new XRWebGLLayer(xrSession, gl) });
+    xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
+    initGL(); if (textureReady) uploadTexture();
+    setText('xr-status','AR session active','value');
+    xrSession.requestAnimationFrame(onXRFrame);
+  } catch(e){ showPreview('failed to start AR: ' + e.message); }
+}
+
+function onXRFrame(t, frame){
+  xrSession.requestAnimationFrame(onXRFrame);
+  const pose = frame.getViewerPose(xrRefSpace); if(!pose) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, xrSession.renderState.baseLayer.framebuffer);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (!placed){ modelMat = placeBillboard(pose.transform.matrix); placed = true; }
+  for (const view of pose.views){
+    const vp = xrSession.renderState.baseLayer.getViewport(view);
+    gl.viewport(vp.x, vp.y, vp.width, vp.height);
+    if (glTex && modelMat) drawBoard(view.projectionMatrix, view.transform.inverse.matrix, modelMat);
+  }
+}
+
+// Place a vertical billboard PLACE_DIST_M ahead, at eye height, facing the user.
+function placeBillboard(viewerMat){
+  const fx=-viewerMat[8], fz=-viewerMat[10];                  // horizontal forward
+  const len=Math.hypot(fx,fz)||1; const nx=fx/len, nz=fz/len;
+  const px=viewerMat[12]+nx*PLACE_DIST_M, pz=viewerMat[14]+nz*PLACE_DIST_M;
+  const yaw=Math.atan2(nx,nz);                                // face board normal back toward viewer
+  const c=Math.cos(yaw), s=Math.sin(yaw);
+  // column-major: rotationY(yaw) · scale(w/2,h/2,1) · translate(px,EYE_H,pz)
+  const hw=BOARD_W_M/2, hh=BOARD_H_M/2;
+  return new Float32Array([
+     c*hw, 0,  -s*hw, 0,
+     0,    hh, 0,     0,
+     s,    0,  c,     0,
+     px,   EYE_H_M, pz, 1
+  ]);
+}
+
+// ── minimal textured-quad GL ──
+const VS=`attribute vec2 aPos; attribute vec2 aUV; uniform mat4 uProj,uView,uModel; varying vec2 vUV;
+  void main(){ vUV=aUV; gl_Position=uProj*uView*uModel*vec4(aPos,0.0,1.0); }`;
+const FS=`precision mediump float; varying vec2 vUV; uniform sampler2D uTex;
+  void main(){ gl_FragColor=texture2D(uTex, vec2(vUV.x, 1.0-vUV.y)); }`;
+function initGL(){
+  prog = link(VS,FS);
+  glTex = gl.createTexture();
+}
+function uploadTexture(){
+  gl.bindTexture(gl.TEXTURE_2D, glTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,boardCanvas);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+}
+function drawBoard(proj,viewM,model){
+  const verts=new Float32Array([ -1,-1,0,0,  1,-1,1,0,  1,1,1,1,  -1,1,0,1 ]);
+  const idx=new Uint16Array([0,1,2,0,2,3]);
+  const vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb); gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
+  const ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+  gl.useProgram(prog);
+  const aPos=gl.getAttribLocation(prog,'aPos'), aUV=gl.getAttribLocation(prog,'aUV');
+  gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,2,gl.FLOAT,false,16,0);
+  gl.enableVertexAttribArray(aUV);  gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,16,8);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog,'uProj'),false,proj);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog,'uView'),false,viewM);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog,'uModel'),false,model);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,glTex);
+  gl.uniform1i(gl.getUniformLocation(prog,'uTex'),0);
+  gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+  gl.deleteBuffer(vb); gl.deleteBuffer(ib);
+}
+function link(vs,fs){ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); return p; }
+function sh(t,src){ const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s); return s; }
+
+// ───────────────────────────────────────────────────────────────────────────
+//  5.  Desktop preview (no AR): draggable 3-D billboard.
+// ───────────────────────────────────────────────────────────────────────────
+function showPreview(reason){
+  setText('xr-status', reason + ' — showing non-AR preview', 'warn');
+  canvas.style.display='none'; enterBtn.style.display='none';
+  document.getElementById('preview').style.display='block';
+  initDrag();
+}
+function initDrag(){
+  const stage=document.getElementById('preview'), plane=document.getElementById('board-plane');
+  let ry=-18, rx=6, dragging=false, lx=0, ly=0;
+  const apply=()=> plane.style.transform=`translate(-50%,-50%) rotateY(${ry}deg) rotateX(${rx}deg)`;
+  apply();
+  stage.addEventListener('pointerdown', e=>{ dragging=true; lx=e.clientX; ly=e.clientY; stage.classList.add('dragging'); });
+  window.addEventListener('pointermove', e=>{ if(!dragging) return; ry+=(e.clientX-lx)*0.4; rx+=-(e.clientY-ly)*0.3; rx=Math.max(-30,Math.min(40,rx)); lx=e.clientX; ly=e.clientY; apply(); });
+  window.addEventListener('pointerup', ()=>{ dragging=false; stage.classList.remove('dragging'); });
+}
+
+// ── util ──
+function haversineM(la1,lo1,la2,lo2){ const R=6371000,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
+</script>
+</body>
+</html>

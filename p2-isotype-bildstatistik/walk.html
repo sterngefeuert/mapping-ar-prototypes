@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>P2 — Walk the Bildstatistik (spike)</title>
+<!--
+  P2 WALK-THROUGH SPIKE — the statistics as terrain, not a sheet.
+
+  ISOTYPE pictograms placed at 1:1 across a schematic Schönbrunn parterre, so you
+  walk THROUGH the data instead of reading a panel. First-person, vanilla WebGL,
+  no dependencies (runs offline).
+
+    [1]  14 May 1933 — the rally's verified apparatus only.
+         6 microphones on the terrace · presumed central speaker pair (faded) ·
+         recording/sound trucks in the parterre · and an almost-empty field:
+         attendance is the deliberate blank. You walk through the ABSENCE.
+    [2]  + 10 Sept 1933 contrast (DIFFERENT EVENT) — 48 distributed loudspeakers
+         down the avenues + a crowd field (1 figure = 10,000). The spectacle the
+         14 May layer refuses, shown explicitly as a different event.
+
+  Controls: click to look (pointer-lock) or drag · WASD / arrows to walk · 1 / 2 layers.
+
+  STATUS: spike, desktop-walkable + verified here. It is a SCHEMATIC layout, not
+  surveyed positions — real on-site placement at true coordinates needs geo-anchoring
+  (AR.js location-based or prat-ar + Google Geospatial), the open stack decision in
+  notes/stack-decision-memo.md. This conveys the EXPERIENCE; it is not geo-accurate.
+-->
+<style>
+  html,body{margin:0;height:100%;background:#47503c;overflow:hidden;font-family:monospace;color:#eee;}
+  canvas{display:block;width:100vw;height:100vh;cursor:grab;}
+  canvas.locked{cursor:none;}
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 12px;background:rgba(0,0,0,.55);font-size:13px;line-height:1.5;z-index:10;}
+  #hud b{color:#fc7;} #hud .k{color:#7cf;}
+  #layer{position:fixed;top:64px;left:12px;font-size:12px;background:rgba(0,0,0,.5);padding:6px 10px;border-radius:3px;z-index:10;max-width:42ch;}
+  #layer .on{color:#9cf;} #layer .warn{color:#fc7;}
+  #cross{position:fixed;top:50%;left:50%;width:10px;height:10px;margin:-5px;border:1px solid rgba(255,255,255,.5);border-radius:50%;z-index:9;pointer-events:none;}
+  #help{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);font-size:12px;color:#cdd3c4;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:3px;z-index:10;}
+  button{font:12px monospace;background:#7cf;color:#000;border:none;border-radius:3px;padding:4px 9px;cursor:pointer;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <b>Walk the Bildstatistik</b> — Schönbrunn parterre, 14 May 1933 ·
+  <span class="k">click</span> look · <span class="k">WASD</span> walk ·
+  <span class="k">1</span>/<span class="k">2</span> layers
+  &nbsp; <button id="toggle">toggle layer</button>
+</div>
+<div id="layer"></div>
+<div id="cross"></div>
+<div id="help">Schematic layout — conveys the walk-through, not surveyed coordinates. Real placement needs geo-anchoring.</div>
+
+<script>
+// ───────────────────────── WebGL bootstrap ─────────────────────────
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl', {antialias:true});
+function resize(){ cv.width=innerWidth*devicePixelRatio; cv.height=innerHeight*devicePixelRatio; gl.viewport(0,0,cv.width,cv.height); }
+addEventListener('resize',resize); resize();
+
+const HORIZON=[0.278,0.314,0.235];           // matches CSS bg, used as fog colour
+gl.clearColor(...HORIZON,1);
+gl.enable(gl.DEPTH_TEST);
+gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+function sh(t,src){const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s;}
+function prog(vs,fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(p));return p;}
+
+// ───────────────────────── shaders ─────────────────────────
+const FOG_NEAR=14, FOG_FAR=95;
+const groundP = prog(`
+  attribute vec3 aPos; uniform mat4 uProj,uView; varying vec3 vW; varying float vD;
+  void main(){ vW=aPos; vec4 vp=uView*vec4(aPos,1.0); vD=length(vp.xyz); gl_Position=uProj*vp; }`,`
+  precision mediump float; varying vec3 vW; varying float vD; uniform vec3 uFog;
+  void main(){
+    vec2 g=abs(fract(vW.xz/5.0-0.5)-0.5)/fwidth(vW.xz/5.0);
+    float line=1.0-min(min(g.x,g.y),1.0);
+    vec3 gravel=mix(vec3(0.55,0.51,0.42), vec3(0.40,0.43,0.32), line*0.7);
+    float f=clamp((${FOG_FAR}.0-vD)/(${FOG_FAR}.0-${FOG_NEAR}.0),0.0,1.0);
+    gl_FragColor=vec4(mix(uFog,gravel,f),1.0);
+  }`);
+// derivative ext for the grid
+gl.getExtension('OES_standard_derivatives');
+
+const spriteP = prog(`
+  attribute vec2 aPos; attribute vec2 aUV; uniform mat4 uProj,uView,uModel; varying vec2 vUV; varying float vD;
+  void main(){ vUV=aUV; vec4 vp=uView*uModel*vec4(aPos,0.0,1.0); vD=length(vp.xyz); gl_Position=uProj*vp; }`,`
+  precision mediump float; varying vec2 vUV; varying float vD; uniform sampler2D uTex; uniform vec3 uFog;
+  void main(){ vec4 t=texture2D(uTex,vec2(vUV.x,1.0-vUV.y)); if(t.a<0.05) discard;
+    float f=clamp((${FOG_FAR}.0-vD)/(${FOG_FAR}.0-${FOG_NEAR}.0),0.0,1.0);
+    gl_FragColor=vec4(mix(uFog,t.rgb,f), t.a); }`);
+
+// ───────────────────────── geometry buffers ─────────────────────────
+// big ground quad
+const groundBuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-200,0,-200, 200,0,-200, 200,0,200, -200,0,-200, 200,0,200, -200,0,200]),gl.STATIC_DRAW);
+// unit sprite quad: x∈[-.5,.5], y∈[0,1] (stands on ground)
+const quadBuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-0.5,0,0,0, 0.5,0,1,0, 0.5,1,1,1, -0.5,0,0,0, 0.5,1,1,1, -0.5,1,0,1]),gl.STATIC_DRAW);
+
+// ───────────────────────── pictogram textures (SVG → canvas) ─────────────────────────
+const SYM={
+  person:{vb:"0 0 20 30",p:'<circle cx="10" cy="5" r="4.4"/><path d="M10 10 C5.5 10 4 13 4 18 L4 30 L7.5 30 L7.5 21 L12.5 21 L12.5 30 L16 30 L16 18 C16 13 14.5 10 10 10 Z"/>'},
+  mic:{vb:"0 0 20 30",p:'<rect x="6" y="2" width="8" height="13" rx="4"/><rect x="9.2" y="15" width="1.6" height="9"/><rect x="4" y="24" width="12" height="2.4" rx="1.2"/>'},
+  truck:{vb:"0 0 38 30",p:'<path d="M2 6 L24 6 L24 21 L2 21 Z"/><path d="M24 11 L31 11 L36 16 L36 21 L24 21 Z"/><circle cx="9" cy="24" r="3.6"/><circle cx="30" cy="24" r="3.6"/>'},
+  speaker:{vb:"0 0 24 30",p:'<path d="M3 11 L9 11 L18 4 L18 26 L9 19 L3 19 Z"/><path d="M20 9 Q24 15 20 21" fill="none" stroke="currentColor" stroke-width="1.6"/>'},
+};
+const TEXES={};
+function makeIconTex(key,name,color,opacity){
+  const s=SYM[name];
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${s.vb}" width="256" height="384" fill="${color}" color="${color}" opacity="${opacity||1}">${s.p}</svg>`;
+  loadTex(key, svg, 256, 384);
+}
+function makeTextTex(key,lines,color){
+  const W=512,H=160,cn=document.createElement('canvas');cn.width=W;cn.height=H;const x=cn.getContext('2d');
+  x.fillStyle=color;x.font='bold 42px Helvetica,Arial';x.textAlign='center';x.textBaseline='middle';
+  lines.forEach((l,i)=>x.fillText(l, W/2, H/2 + (i-(lines.length-1)/2)*48));
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cn);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  TEXES[key]={tex,aspect:W/H};
+}
+let pending=0, started=false;
+function loadTex(key,svg,w,h){
+  pending++;
+  const img=new Image();
+  img.onload=()=>{const cn=document.createElement('canvas');cn.width=w;cn.height=h;cn.getContext('2d').drawImage(img,0,0,w,h);
+    const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cn);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    TEXES[key]={tex,aspect:w/h}; if(--pending===0 && !started){started=true;loop();}};
+  img.src='data:image/svg+xml;base64,'+btoa(svg);
+}
+const BRICK="#b8493a", STEEL="#7d93a2", GHOST="#b3ab99", INK="#e9e3d5";
+makeIconTex('mic','mic',BRICK);
+makeIconTex('truck','truck',BRICK);
+makeIconTex('speaker_g','speaker',GHOST,0.5);
+makeIconTex('speaker_s','speaker',STEEL);
+makeIconTex('person_s','person',STEEL);
+makeTextTex('lbl_terrace',['TERRACE — 6 microphones'],'#f3d9b0');
+makeTextTex('lbl_blank',['ATTENDANCE 14 MAY','— NOT counted —'],'#f3d9b0');
+makeTextTex('lbl_sept',['10 SEPT 1933 — DIFFERENT EVENT','48 loudspeakers · ≈300,000'],'#bcd0dc');
+
+// ───────────────────────── scene: pictograms at 1:1 (metres) ─────────────────────────
+// Origin at viewer start; terrace toward -Z. Heights in metres.
+function deg(d){return d*Math.PI/180;}
+const SCENE_14MAY=[]; const SCENE_SEPT=[];
+// 6 mics in a semicircle on the terrace (z≈-9), facing the parterre
+for(let i=0;i<6;i++){const a=deg(-50+i*20); SCENE_14MAY.push({tex:'mic',x:Math.sin(a)*3.2,z:-9+Math.cos(a)*0.6,h:1.7});}
+// presumed central speaker pair flanking the terrace (faded)
+SCENE_14MAY.push({tex:'speaker_g',x:-6,z:-9.5,h:1.4},{tex:'speaker_g',x:6,z:-9.5,h:1.4});
+// recording / sound trucks out in the parterre
+SCENE_14MAY.push({tex:'truck',x:-12,z:-26,h:2.4},{tex:'truck',x:10,z:-34,h:2.4},{tex:'truck',x:-2,z:-44,h:2.4});
+// labels
+SCENE_14MAY.push({tex:'lbl_terrace',x:0,z:-11,h:2.4,y:2.6,label:true});
+SCENE_14MAY.push({tex:'lbl_blank',x:0,z:-30,h:2.6,y:3.0,label:true});
+
+// September contrast: 48 loudspeakers in two avenue rows + crowd field (1 fig = 10,000)
+for(let i=0;i<24;i++){const z=-8-i*2.6; SCENE_SEPT.push({tex:'speaker_s',x:-13,z,h:1.0}); SCENE_SEPT.push({tex:'speaker_s',x:13,z,h:1.0});}
+for(let i=0;i<30;i++){const r=2+Math.floor(i/6); SCENE_SEPT.push({tex:'person_s',x:-7+(i%6)*2.6,z:-16-r*3.4,h:1.7});}
+SCENE_SEPT.push({tex:'lbl_sept',x:0,z:-14,h:3.0,y:3.4,label:true});
+
+// ───────────────────────── camera + input ─────────────────────────
+const cam={x:0,y:1.65,z:10,yaw:0,pitch:-0.04};
+const keys={};
+addEventListener('keydown',e=>{keys[e.code]=true;
+  if(e.key==='1'){layer=1;updateLayerUI();} if(e.key==='2'){layer=2;updateLayerUI();}});
+addEventListener('keyup',e=>keys[e.code]=false);
+document.getElementById('toggle').onclick=()=>{layer=layer===1?2:1;updateLayerUI();};
+
+let dragging=false,lx=0,ly=0,locked=false;
+cv.addEventListener('click',()=>{ if(!locked && cv.requestPointerLock) cv.requestPointerLock(); });
+document.addEventListener('pointerlockchange',()=>{locked=(document.pointerLockElement===cv);cv.classList.toggle('locked',locked);});
+cv.addEventListener('pointerdown',e=>{if(!locked){dragging=true;lx=e.clientX;ly=e.clientY;}});
+addEventListener('pointerup',()=>dragging=false);
+addEventListener('pointermove',e=>{
+  let dx=0,dy=0;
+  if(locked){dx=e.movementX;dy=e.movementY;} else if(dragging){dx=e.clientX-lx;dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;}
+  cam.yaw+=dx*0.0028; cam.pitch=Math.max(-1.4,Math.min(1.4,cam.pitch-dy*0.0028));
+});
+
+let layer = new URLSearchParams(location.search).get('layer')==='2' ? 2 : 1;
+if(layer===2){ cam.z=18; }   // start further back so the avenue reads
+function updateLayerUI(){
+  document.getElementById('layer').innerHTML = layer===1
+   ? `<span class="on">[1] 14 MAY 1933 — verified apparatus only.</span><br>6 mics · presumed central speakers (faded) · sound trucks.<br><span class="warn">Attendance is the blank you walk through.</span>`
+   : `<span class="on">[2] + 10 SEPT 1933 contrast (DIFFERENT EVENT).</span><br>48 distributed loudspeakers · crowd field (1 figure = 10,000).<br><span class="warn">The spectacle the 14 May layer refuses.</span>`;
+}
+updateLayerUI();
+
+// ───────────────────────── matrix maths ─────────────────────────
+function perspective(fovy,asp,n,f){const t=1/Math.tan(fovy/2);return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]);}
+function lookAt(e,c,u){
+  let zx=e[0]-c[0],zy=e[1]-c[1],zz=e[2]-c[2];let zl=Math.hypot(zx,zy,zz)||1;zx/=zl;zy/=zl;zz/=zl;
+  let xx=u[1]*zz-u[2]*zy,xy=u[2]*zx-u[0]*zz,xz=u[0]*zy-u[1]*zx;let xl=Math.hypot(xx,xy,xz)||1;xx/=xl;xy/=xl;xz/=xl;
+  let yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  return new Float32Array([xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, -(xx*e[0]+xy*e[1]+xz*e[2]),-(yx*e[0]+yy*e[1]+yz*e[2]),-(zx*e[0]+zy*e[1]+zz*e[2]),1]);
+}
+
+// ───────────────────────── render loop ─────────────────────────
+function move(){
+  const spd=0.12, s=Math.sin(cam.yaw), c=Math.cos(cam.yaw);
+  const fx=s, fz=-c, rx=c, rz=s;     // forward & right on ground plane
+  let m=0,st=0;
+  if(keys.KeyW||keys.ArrowUp)m=1; if(keys.KeyS||keys.ArrowDown)m=-1;
+  if(keys.KeyD||keys.ArrowRight)st=1; if(keys.KeyA||keys.ArrowLeft)st=-1;
+  cam.x+=(fx*m+rx*st)*spd; cam.z+=(fz*m+rz*st)*spd;
+}
+function loop(){
+  requestAnimationFrame(loop); move();
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const asp=cv.width/cv.height;
+  const proj=perspective(deg(72),asp,0.1,300);
+  const fwd=[cam.x+Math.sin(cam.yaw)*Math.cos(cam.pitch), cam.y+Math.sin(cam.pitch), cam.z-Math.cos(cam.yaw)*Math.cos(cam.pitch)];
+  const view=lookAt([cam.x,cam.y,cam.z],fwd,[0,1,0]);
+
+  // ground
+  gl.useProgram(groundP);
+  gl.uniformMatrix4fv(gl.getUniformLocation(groundP,'uProj'),false,proj);
+  gl.uniformMatrix4fv(gl.getUniformLocation(groundP,'uView'),false,view);
+  gl.uniform3fv(gl.getUniformLocation(groundP,'uFog'),HORIZON);
+  gl.bindBuffer(gl.ARRAY_BUFFER,groundBuf);
+  const gp=gl.getAttribLocation(groundP,'aPos');gl.enableVertexAttribArray(gp);gl.vertexAttribPointer(gp,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+
+  // sprites
+  gl.useProgram(spriteP);
+  gl.uniformMatrix4fv(gl.getUniformLocation(spriteP,'uProj'),false,proj);
+  gl.uniformMatrix4fv(gl.getUniformLocation(spriteP,'uView'),false,view);
+  gl.uniform3fv(gl.getUniformLocation(spriteP,'uFog'),HORIZON);
+  gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
+  const sp=gl.getAttribLocation(spriteP,'aPos'),su=gl.getAttribLocation(spriteP,'aUV');
+  gl.enableVertexAttribArray(sp);gl.vertexAttribPointer(sp,2,gl.FLOAT,false,16,0);
+  gl.enableVertexAttribArray(su);gl.vertexAttribPointer(su,2,gl.FLOAT,false,16,8);
+  const uModel=gl.getUniformLocation(spriteP,'uModel'), uTex=gl.getUniformLocation(spriteP,'uTex');
+
+  const list = layer===1 ? SCENE_14MAY : SCENE_14MAY.concat(SCENE_SEPT);
+  // far-to-near sort for blending
+  list.map(o=>[o,(o.x-cam.x)**2+(o.z-cam.z)**2]).sort((a,b)=>b[1]-a[1]).forEach(([o])=>{
+    const T=TEXES[o.tex]; if(!T) return;
+    const h=o.h, w=h*T.aspect, yaw=Math.atan2(cam.x-o.x, cam.z-o.z), c=Math.cos(yaw), s=Math.sin(yaw);
+    const baseY=o.y||0;
+    const model=new Float32Array([c*w,0,-s*w,0, 0,h,0,0, s,0,c,0, o.x,baseY,o.z,1]);
+    gl.uniformMatrix4fv(uModel,false,model);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,T.tex);gl.uniform1i(uTex,0);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+  });
+}
+</script>
+</body>
+</html>
