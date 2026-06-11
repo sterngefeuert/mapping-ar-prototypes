@@ -107,7 +107,7 @@ function onSelect(){
   placedAR.position.setFromMatrixPosition(reticle.matrix);
   placedAR.rotation.y=new THREE.Euler().setFromRotationMatrix(reticle.matrix).y;
   scene.add(placedAR);
-  hint.textContent='Placed — walk around it.';
+  hint.textContent='Placed — walk around it · drag to rotate · pinch to zoom.';
 }
 
 function render(_,frame){
@@ -134,6 +134,18 @@ function makeContent(){
   const cube=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.2), new THREE.MeshStandardMaterial({color:0x7cc4ff}));
   cube.position.y=0.1; grp.add(cube); return grp;
 }
+
+// ── AR framing gestures: 1-finger drag = rotate, pinch = zoom the placed content (clean screencasts) ──
+let _rx=null,_pinch=null,_bRot=0,_bScale=1;
+function arObj(){ return (renderer && renderer.xr.isPresenting && placedAR) ? placedAR : null; }
+function _td(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+addEventListener('touchstart',e=>{ const o=arObj(); if(!o) return;
+  if(e.touches.length===1){ _rx=e.touches[0].clientX; _bRot=o.rotation.y; _pinch=null; }
+  else if(e.touches.length>=2){ _pinch=_td(e.touches); _bScale=o.scale.x; _rx=null; } },{passive:true});
+addEventListener('touchmove',e=>{ const o=arObj(); if(!o) return;
+  if(e.touches.length===1 && _rx!=null){ o.rotation.y=_bRot+(e.touches[0].clientX-_rx)*0.01; }
+  else if(e.touches.length>=2 && _pinch!=null){ o.scale.setScalar(Math.max(0.2,Math.min(6,_bScale*_td(e.touches)/_pinch))); } },{passive:true});
+addEventListener('touchend',()=>{ _rx=null; _pinch=null; },{passive:true});
 </script>
 </body>
 </html>
