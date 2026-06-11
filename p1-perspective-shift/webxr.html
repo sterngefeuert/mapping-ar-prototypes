@@ -3,115 +3,131 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>P1 — Perspective shift (WebXR)</title>
+<title>P1 — Perspective shift (WebXR + browser fallback)</title>
 <!--
-  P1 in WebXR — the body as the instrument of perspective. Two standpoints at the
-  14 May 1933 rally: the SPEAKER TERRACE and the PARTICIPANT PARTERRE. Spatialised
-  (positional) audio shifts as you physically WALK between them, so the same event is
-  felt differently depending on where you stand.
-
-  Stack: three.js + ARButton + hit-test (tap to place the pair). Android Chrome (ARCore).
-
-  HONESTY (CLAUDE.md + BRIEF.md + ETHICS-OPTIONS.md):
-    - The audio here is PLACEHOLDER SYNTHETIC SOUND, generated in the browser. It is NOT a
-      historical recording. Usable period crowd audio is the concept's open question.
-    - It is deliberately ABSTRACT and non-triumphal — it does not try to reproduce an adoring
-      roar. Whether/how to render the speaker standpoint (options A–E in ETHICS-OPTIONS.md)
-      is an UNRESOLVED scholarly decision, not settled by this sketch.
-  Placement is tap-to-surface, NOT geo-anchored to the real terrace/parterre.
+  P1 in WebXR — the body as the instrument of perspective. Two standpoints (SPEAKER TERRACE,
+  PARTICIPANT PARTERRE) with spatialised audio that shifts as you move between them. DUAL MODE:
+    • Android + Chrome (ARCore): tap "Start AR", point at floor, tap to place; WALK between them.
+    • Any other browser: orbit preview (drag to look, scroll to zoom) + click to start audio;
+      moving the camera between the two points shifts the sound.
+  HONESTY: audio is PLACEHOLDER SYNTHETIC sound generated in-browser — NOT a recording, abstract
+  by design. The ethical rendering of the speaker standpoint (options A–E) is UNRESOLVED. Not geo-anchored.
 -->
 <style>
-  html,body{margin:0;height:100%;background:#000;color:#eee;font:14px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden}
+  html,body{margin:0;height:100%;background:#0c0e12;color:#eee;font:14px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden}
   #overlay{position:fixed;inset:0;pointer-events:none;z-index:5}
   #panel{position:absolute;left:12px;right:12px;top:12px;background:rgba(0,0,0,.66);padding:10px 12px;border-radius:8px}
   #panel b{color:#7cc4ff}
-  #disc{position:absolute;left:12px;right:12px;top:74px;background:rgba(120,40,10,.7);padding:8px 12px;border-radius:8px;font-size:12.5px}
-  #hint{position:absolute;left:12px;right:12px;bottom:92px;text-align:center;background:rgba(0,0,0,.6);padding:8px 12px;border-radius:8px}
+  #disc{position:absolute;left:12px;right:12px;top:74px;background:rgba(120,40,10,.72);padding:8px 12px;border-radius:8px;font-size:12.5px}
+  #hint{position:absolute;left:12px;right:12px;bottom:90px;text-align:center;background:rgba(0,0,0,.6);padding:8px 12px;border-radius:8px}
   .warn{color:#ffc266}
 </style>
 </head>
 <body>
 <div id="overlay">
-  <div id="panel"><b>Perspective shift</b> — <span id="msg">checking…</span></div>
+  <div id="panel"><b>Perspective shift</b> — <span id="msg">loading…</span></div>
   <div id="disc">⚠ Placeholder <b>synthetic</b> audio — not a historical recording. Abstract by design; the ethical rendering of the speaker standpoint is unresolved (see brief).</div>
-  <div id="hint" hidden>Tap to place the two standpoints, then WALK between them. The sound shifts with your position.</div>
+  <div id="hint" hidden>Place the two standpoints, then move between them — the sound shifts with your position.</div>
 </div>
 
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three": "../libs/three/three.module.js",
+  "three/addons/": "../libs/three/addons/"
 }}
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const msg=document.getElementById('msg');
-const hint=document.getElementById('hint');
-const overlay=document.getElementById('overlay');
+const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), disc=document.getElementById('disc');
 
-let renderer, scene, camera, reticle, controller, listener;
-let hitTestSource=null, hitTestSourceRequested=false, root=null;
+let renderer, scene, camera, controls, grid, reticle, controller, listener;
+let hitTestSource=null, hitTestSourceRequested=false;
+let placedAR=null, browserContent=null, audioArmed=false;
 
-if(!('xr' in navigator)) msg.innerHTML='<span class="warn">WebXR unavailable. Open in Android Chrome (ARCore). iOS Safari is not supported.</span>';
-else navigator.xr.isSessionSupported('immersive-ar').then(ok=>
-  ok?init():(msg.innerHTML='<span class="warn">immersive-ar not supported here. Use Android Chrome (ARCore).</span>'));
+init();
 
-function init(){
+async function init(){
   scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.01,60);
+  camera=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 80);
+  camera.position.set(0,1.6,1.5);
   scene.add(new THREE.HemisphereLight(0xffffff,0x445,1.2));
   listener=new THREE.AudioListener(); camera.add(listener);
 
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
   renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth,innerHeight); renderer.xr.enabled=true;
   document.body.appendChild(renderer.domElement);
-  document.body.appendChild(ARButton.createButton(renderer,{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}}));
-  msg.textContent='tap “Start AR”.';
+
+  controls=new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,0.6,-3); controls.enableDamping=true; controls.update();
+
+  grid=new THREE.GridHelper(16,32,0x33414f,0x1b2229); scene.add(grid);
 
   const ring=new THREE.RingGeometry(0.07,0.09,32).rotateX(-Math.PI/2);
   reticle=new THREE.Mesh(ring,new THREE.MeshBasicMaterial({color:0x7cc4ff}));
   reticle.matrixAutoUpdate=false; reticle.visible=false; scene.add(reticle);
 
-  controller=renderer.xr.getController(0);
-  controller.addEventListener('select',onSelect); scene.add(controller);
+  controller=renderer.xr.getController(0); controller.addEventListener('select',onSelect); scene.add(controller);
 
-  renderer.xr.addEventListener('sessionstart',()=>{hint.hidden=false;msg.textContent='AR active.';});
-  renderer.xr.addEventListener('sessionend',()=>{hint.hidden=true;hitTestSourceRequested=false;hitTestSource=null;});
+  // browser: arm audio on first interaction (autoplay policy needs a gesture)
+  renderer.domElement.addEventListener('pointerdown', armAudio);
+
+  let arOK=false;
+  if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
+  if(arOK){
+    document.body.appendChild(ARButton.createButton(renderer,{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}}));
+    msg.innerHTML='browser preview below — or tap <b>Start AR</b> (Android).';
+  } else {
+    msg.innerHTML='<span class="warn">No WebXR AR here</span> — browser preview: drag to look, scroll to zoom, <b>click to start sound</b>. Real AR needs Android + Chrome.';
+  }
+
+  enterBrowser();
+  renderer.xr.addEventListener('sessionstart', enterAR);
+  renderer.xr.addEventListener('sessionend', enterBrowser);
   addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
   renderer.setAnimationLoop(render);
 }
 
-// ── synthetic, abstract murmur (brown-ish noise + slow swell). NOT documentary. ──
-function murmurBuffer(seconds, lowpass, swellHz){
+function armAudio(){
+  if(audioArmed) return; audioArmed=true;
+  const ctx=THREE.AudioContext.getContext(); if(ctx.state!=='running') ctx.resume();
+}
+function enterBrowser(){
+  if(placedAR){ scene.remove(placedAR); placedAR=null; }
+  reticle.visible=false; grid.visible=true; controls.enabled=true; hint.hidden=true;
+  if(!browserContent){ browserContent=makeContent(); browserContent.position.set(0,0,0); scene.add(browserContent); }
+}
+function enterAR(){
+  if(browserContent){ scene.remove(browserContent); browserContent=null; }
+  grid.visible=false; controls.enabled=false; hint.hidden=false;
+  msg.textContent='AR active — point at the floor, tap to place the two standpoints.';
+}
+
+function murmurBuffer(seconds,lowpass,swellHz){
   const ctx=THREE.AudioContext.getContext();
   const len=Math.floor(ctx.sampleRate*seconds), buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0);
   let last=0;
   for(let i=0;i<len;i++){
-    const white=Math.random()*2-1;
-    last=(last+lowpass*white)/(1+lowpass);
+    const white=Math.random()*2-1; last=(last+lowpass*white)/(1+lowpass);
     const env=0.55+0.45*Math.sin((i/ctx.sampleRate)*swellHz*2*Math.PI);
     d[i]=Math.max(-1,Math.min(1,last*3.2*(0.45+0.4*env)));
   }
   return buf;
 }
-function posSound(buffer, refDist, vol){
+function posSound(buffer,refDist,vol){
   const s=new THREE.PositionalAudio(listener);
-  s.setBuffer(buffer); s.setLoop(true); s.setRefDistance(refDist); s.setRolloffFactor(1.6); s.setVolume(vol);
-  return s;
+  s.setBuffer(buffer); s.setLoop(true); s.setRefDistance(refDist); s.setRolloffFactor(1.6); s.setVolume(vol); return s;
 }
-function ringMarker(color){
-  const m=new THREE.Mesh(new THREE.RingGeometry(0.25,0.32,48).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.85}));
-  return m;
-}
+function ringMarker(color){ return new THREE.Mesh(new THREE.RingGeometry(0.25,0.32,48).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.85})); }
 function label(text,heightM,fg='#fff',bg='rgba(0,0,0,.78)'){
   const f=44,pad=18,c=document.createElement('canvas'),x=c.getContext('2d');
   x.font=`600 ${f}px Helvetica,Arial,sans-serif`;
   const w=Math.ceil(x.measureText(text).width)+pad*2,h=f+pad*2; c.width=w;c.height=h;
   x.font=`600 ${f}px Helvetica,Arial,sans-serif`; x.fillStyle=bg;
-  x.beginPath();x.roundRect?x.roundRect(0,0,w,h,14):x.rect(0,0,w,h);x.fill();
-  x.fillStyle=fg;x.textBaseline='middle';x.fillText(text,pad,h/2+2);
+  x.beginPath(); x.roundRect?x.roundRect(0,0,w,h,14):x.rect(0,0,w,h); x.fill();
+  x.fillStyle=fg; x.textBaseline='middle'; x.fillText(text,pad,h/2+2);
   const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
   sp.scale.set(heightM*w/h,heightM,1); return sp;
@@ -119,39 +135,35 @@ function label(text,heightM,fg='#fff',bg='rgba(0,0,0,.78)'){
 
 function makeContent(){
   const g=new THREE.Group();
-
-  // SPEAKER TERRACE — close, front. The crowd "heard from the front", brighter/thinner.
+  // SPEAKER TERRACE — close/front
   const t=new THREE.Group(); t.position.set(0,0,-1);
-  const tm=ringMarker(0xff7a4d); t.add(tm);
+  t.add(ringMarker(0xff7a4d));
   const tl=label('SPEAKER TERRACE — where the speakers stood',0.14,'#fff','rgba(155,58,46,.85)'); tl.position.y=1.5; t.add(tl);
   const tSnd=posSound(murmurBuffer(3,0.06,0.7),1.2,0.8); tSnd.position.y=0.2; t.add(tSnd);
   g.add(t);
-
-  // PARTICIPANT PARTERRE — further, within the mass. Lower, broader, enveloping.
+  // PARTICIPANT PARTERRE — further
   const p=new THREE.Group(); p.position.set(0,0,-5);
-  const pm=ringMarker(0x7cc4ff); p.add(pm);
+  p.add(ringMarker(0x7cc4ff));
   const pl=label('PARTICIPANT PARTERRE — within the crowd',0.14,'#fff','rgba(40,80,110,.85)'); pl.position.y=1.5; p.add(pl);
   const pSnd=posSound(murmurBuffer(3,0.02,0.35),1.6,0.9); pSnd.position.y=0.2; p.add(pSnd);
   g.add(p);
-
-  // the traverse: a thin line between the two standpoints (the walk is the content)
+  // the traverse
   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0.02,-1),new THREE.Vector3(0,0.02,-5)]),
-                            new THREE.LineDashedMaterial({color:0xffffff,dashSize:0.15,gapSize:0.12,transparent:true,opacity:0.5}));
+    new THREE.LineDashedMaterial({color:0xffffff,dashSize:0.15,gapSize:0.12,transparent:true,opacity:0.5}));
   line.computeLineDistances(); g.add(line);
-
-  // start audio (we are inside a user gesture: the select/tap)
-  const ctx=THREE.AudioContext.getContext(); if(ctx.state!=='running') ctx.resume();
-  tSnd.play(); pSnd.play();
+  const ctx=THREE.AudioContext.getContext(); if(ctx.state==='running'){ tSnd.play(); pSnd.play(); }
+  else ctx.resume().then(()=>{ tSnd.play(); pSnd.play(); });
   return g;
 }
 
 function onSelect(){
-  if(root || !reticle.visible) return;            // place the pair once
-  root=makeContent();
-  root.position.setFromMatrixPosition(reticle.matrix);
-  root.rotation.y=new THREE.Euler().setFromRotationMatrix(reticle.matrix).y;
-  scene.add(root);
-  hint.textContent='Two standpoints placed. Walk from the terrace into the parterre — listen to the shift.';
+  if(placedAR || !reticle.visible) return;
+  armAudio();
+  placedAR=makeContent();
+  placedAR.position.setFromMatrixPosition(reticle.matrix);
+  placedAR.rotation.y=new THREE.Euler().setFromRotationMatrix(reticle.matrix).y;
+  scene.add(placedAR);
+  hint.textContent='Walk from the terrace into the parterre — listen to the shift.';
 }
 
 function render(_,frame){
@@ -164,10 +176,10 @@ function render(_,frame){
     }
     if(hitTestSource){
       const hits=frame.getHitTestResults(hitTestSource);
-      if(hits.length && !root){ reticle.visible=true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
+      if(hits.length && !placedAR){ reticle.visible=true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
       else reticle.visible=false;
     }
-  }
+  } else if(controls){ controls.update(); }
   renderer.render(scene,camera);
 }
 </script>
