@@ -13,15 +13,29 @@ Celebration" (*Türkenbefreiungsfeier*) was held on 14 May 1933.
 
 ## What's here
 
-| Prototype | Files | Runs on |
+**Real WebXR AR** (three.js + hit-test; **Android + Chrome/ARCore only**, tap to
+place on a detected surface — not geo-pinned to the real site):
+
+| | File | What it does |
 |---|---|---|
-| **P2 — Bildstatistik in place** (Neurath/ISOTYPE pictograms) | `p2-isotype-bildstatistik/index.html` (flat board) · `ar.html` (WebXR billboard) · `walk.html` (1:1 walk-through) | `index`/`walk`: any desktop browser · `ar`: Android + ARCore (Chrome) for real AR, draggable preview elsewhere |
-| **P1 — perspective shift** | — | concept stage; no runnable demo yet |
+| **P2 — ISOTYPE apparatus** | `p2-isotype-bildstatistik/webxr.html` | the verified apparatus placed at 1:1 as pictograms you walk among; attendance left blank; September contrast toggle |
+| **P1 — perspective shift** | `p1-perspective-shift/webxr.html` | speaker vs participant standpoints; spatialised audio shifts as you walk (audio is **placeholder/synthetic, disclosed in-app**) |
+| template | `_template/webxr.html` | reusable "place content in AR" shell every prototype starts from |
 
-The landing page (`index.html`) links all three P2 variants with previews.
+**Browser versions** (not AR):
 
-The demos are single-file, vanilla JS, **no build step** and **no external
-dependencies** — inline SVG and data-URIs only.
+| | File | Runs on |
+|---|---|---|
+| P2 flat board | `p2-isotype-bildstatistik/index.html` | any browser |
+| P2 walk-through | `p2-isotype-bildstatistik/walk.html` | desktop only (WASD + mouse); press <kbd>2</kbd> for the September contrast |
+
+The landing page (`index.html`) links everything. The AR demos load three.js
+from a CDN; the browser demos are single-file vanilla JS with no dependencies.
+
+> **iOS Safari does not support WebXR `immersive-ar`** (as of 2026) — the AR demos
+> need an Android phone with Chrome + ARCore. True on-site geo-anchoring (pinning
+> content to the real Schönbrunn coordinates) needs ARCore Geospatial / prat-ar and
+> is out of scope for these "simple WebXR" sketches.
 
 ## Data-honesty conventions (enacted in the demos)
 
