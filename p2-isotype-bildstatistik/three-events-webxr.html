@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>P2 — Three gatherings, one contested count (WebXR + browser fallback)</title>
+<!--
+  P2 SIBLING — the CONTESTED-MAGNITUDE board, as distinct from webxr.html / walk-webxr.html
+  (which deliberately BLANK the 14 May attendance and count machinery, not crowds). This
+  variant makes the opposite, riskier bet the BRIEF leaves open: it brings crowd magnitude
+  back — but ONLY as contestation, never as a triumphal total. Three gatherings on
+  13–14 May 1933 read as an ISOTYPE board you OVERSEE (read, don't inhabit):
+    1. Schönbrunn  — »Türkenbefreiungsfeier« (Heimwehr/Austrofascist), 20,000–40,000 CONTESTED
+    2. Engelmann Arena — NSDAP commemoration, 11,000–20,000 CONTESTED
+    3. Gemeindebauten — »Freiheitsfeiern« (Social-Democratic), ~50 dispersed sites, NO headcount
+
+  Honesty / ethics (BRIEF.md §"Ethical constraint check"):
+    • 1 figure = 5,000 people. SOLID = lower/official estimate; FADED = the extra figure
+      claimed only by the organisers — the hollow zone IS the propaganda, shown as unfilled.
+    • The Social-Democratic response is NOT summed into a bar: ~50 scattered blocks, because
+      it had no single headcount BY DESIGN. The difference in FORM carries the politics — and
+      keeps the centralised fascist mass from reading as "the only real thing."
+    • Counted this way the board is COUNTER-MEDIATION, not a monument to scale: contestation +
+      the counter-public the rally was built to overshadow, in Neurath's suppressed Red Vienna
+      idiom turned back on the regime. (Tap "Framing" to make the argument explicit in-scene.)
+    • Numbers are Ganahl, Campus Medius (2022): Schönbrunn p.~166; Engelmann p.69; freedom
+      celebrations / listener strike pp.~28–31,59,85. No figure is invented.
+  DUAL MODE like the siblings; SCHEMATIC placement (tap-to-place), not geo-anchored.
+-->
+<style>
+  html,body{margin:0;height:100%;background:#14110e;color:#e9e3d5;font:14px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden}
+  #overlay{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #panel{position:absolute;left:12px;right:12px;top:12px;background:rgba(20,18,16,.66);padding:10px 12px;border-radius:8px}
+  #panel b{color:#c98}
+  #hint{position:absolute;left:12px;right:12px;bottom:92px;text-align:center;background:rgba(20,18,16,.6);padding:8px 12px;border-radius:8px}
+  #framingBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;display:none;pointer-events:auto;
+           background:#5d7382;color:#e9e3d5;border:none;border-radius:6px;padding:10px 16px;font:600 14px system-ui}
+  #camBtn{position:absolute;left:12px;bottom:150px;pointer-events:auto;background:rgba(20,18,16,.85);color:#e9e3d5;
+          border:1px solid #5d7382;border-radius:6px;padding:10px 14px;font:600 14px system-ui}
+  .warn{color:#ffc266}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div id="panel"><b>Three gatherings, one contested count</b> — <span id="msg">loading…</span></div>
+  <button id="framingBtn">ℹ Framing</button>
+  <button id="camBtn">📷 Camera AR</button>
+  <div id="hint" hidden>Point at the ground, tap to place the board. Then step back and read it against the garden.</div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "../libs/three/three.module.js",
+  "three/addons/": "../libs/three/addons/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { setupCameraAR } from '../libs/camera-ar.js';
+
+const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), framingBtn=document.getElementById('framingBtn'), camBtn=document.getElementById('camBtn');
+const PAPER='#e9e3d5', BRICK='#9b3a2e', STEEL='#3a3a3a', SLATE='#5d7382', GHOST='#b3ab99', RED='#b3322c';
+const UNIT=5000;                              // people per ISOTYPE figure
+
+// deterministic PRNG (mulberry32) — fixed seed so the dispersed sites never drift
+function mulberry32(a){return function(){a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
+
+const SYM={
+  // ISOTYPE figure (same glyph as the siblings) + a Gemeindebau block with a flag (a »Freiheitsfeier« site)
+  person:['<circle cx="10" cy="5" r="4.4"/><path d="M10 10C5.5 10 4 13 4 18L4 30 7.5 30 7.5 21 12.5 21 12.5 30 16 30 16 18C16 13 14.5 10 10 10Z"/>',20,30],
+  bau:['<rect x="3.4" y="2" width="1.3" height="9"/><path d="M4.7 2.4 10.7 4.2 4.7 6Z"/><rect x="4" y="11" width="13" height="17"/>',22,30],
+};
+
+let renderer, scene, camera, controls, grid, reticle, controller;
+let hitTestSource=null, hitTestSourceRequested=false;
+let placedAR=null, browserContent=null, framingGroup=null, cameraAR=null;
+
+function pageBG(v){ document.documentElement.style.background=v; document.body.style.background=v; }
+
+init();
+
+async function init(){
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 80);
+  camera.position.set(0,1.6,3.4);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x99a,1.4));
+
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth,innerHeight); renderer.xr.enabled=true;
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+
+  controls=new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,1.4,-2.4); controls.enableDamping=true; controls.update();
+
+  grid=new THREE.GridHelper(16,32,0x6b5d44,0x342d22); scene.add(grid);
+
+  const ring=new THREE.RingGeometry(0.07,0.09,32).rotateX(-Math.PI/2);
+  reticle=new THREE.Mesh(ring,new THREE.MeshBasicMaterial({color:0x9b3a2e}));
+  reticle.matrixAutoUpdate=false; reticle.visible=false; scene.add(reticle);
+
+  controller=renderer.xr.getController(0); controller.addEventListener('select',onSelect); scene.add(controller);
+  framingBtn.addEventListener('click',toggleFraming);
+  cameraAR = setupCameraAR({ renderer, scene, camera, controls, button: camBtn, getContent: makeContent,
+    onEnter: ()=>{ if(browserContent){ scene.remove(browserContent); browserContent=null; } grid.visible=false; reticle.visible=false;
+      hint.hidden=false; hint.textContent='Camera AR — rotate phone to look · drag to rotate · pinch to zoom.'; framingBtn.style.display='block'; },
+    onExit: ()=>{ enterBrowser(); } });
+
+  let arOK=false;
+  if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
+  if(arOK){
+    document.body.appendChild(ARButton.createButton(renderer,{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}}));
+    msg.innerHTML='browser preview below — or tap <b>Start AR</b> (Android).';
+  } else {
+    msg.innerHTML='<span class="warn">No WebXR AR here</span> — browser preview (drag to look, scroll to zoom). Real AR needs Android + Chrome.';
+  }
+
+  enterBrowser();
+  renderer.xr.addEventListener('sessionstart', enterAR);
+  renderer.xr.addEventListener('sessionend', enterBrowser);
+  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  renderer.setAnimationLoop(render);
+}
+
+function enterBrowser(){
+  if(placedAR){ scene.remove(placedAR); placedAR=null; }
+  reticle.visible=false; grid.visible=true; controls.enabled=true; hint.hidden=true; framingGroup=null;
+  pageBG('');
+  if(!browserContent){ browserContent=makeContent(); browserContent.position.set(0,0,0); scene.add(browserContent); }
+  framingBtn.style.display='block'; framingBtn.textContent='ℹ Framing';
+}
+function enterAR(){
+  if(browserContent){ scene.remove(browserContent); browserContent=null; }
+  grid.visible=false; controls.enabled=false; hint.hidden=false; framingGroup=null;
+  pageBG('transparent');
+  framingBtn.style.display='none'; framingBtn.textContent='ℹ Framing';
+  msg.textContent='AR active — point at the ground, tap to place the board.';
+}
+
+function pictoSprite(symKey,color,heightM,opacity=1,clipFrac=1){
+  const [inner,w,h]=SYM[symKey];
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${w*8}" height="${h*8}" viewBox="0 0 ${w} ${h}" fill="${color}" color="${color}">${inner}</svg>`;
+  const tex=new THREE.Texture(); tex.colorSpace=THREE.SRGBColorSpace;
+  const img=new Image(); img.onload=()=>{const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+    const cw=Math.max(1,Math.round(img.width*clipFrac));            // left-crop for ISOTYPE partial icons
+    c.getContext('2d').drawImage(img,0,0,cw,img.height,0,0,cw,img.height); tex.image=c; tex.needsUpdate=true;};
+  img.src='data:image/svg+xml;base64,'+btoa(svg);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,opacity,depthWrite:false}));
+  sp.scale.set(heightM*w/h,heightM,1); return sp;
+}
+function labelSprite(text,heightM=0.16,fg='#e9e3d5',bg='rgba(20,18,16,.82)'){
+  const f=44,pad=18,c=document.createElement('canvas'),x=c.getContext('2d');
+  x.font=`600 ${f}px Helvetica,Arial,sans-serif`;
+  const w=Math.ceil(x.measureText(text).width)+pad*2,h=f+pad*2; c.width=w;c.height=h;
+  x.font=`600 ${f}px Helvetica,Arial,sans-serif`; x.fillStyle=bg; rr(x,0,0,w,h,14); x.fill();
+  x.fillStyle=fg; x.textBaseline='middle'; x.fillText(text,pad,h/2+2);
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+  sp.scale.set(heightM*w/h,heightM,1); return sp;
+}
+function rr(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
+function at(o,x,y,z){o.position.set(x,y,z);return o;}
+
+const Z=-2.6, X0=-1.25, SP=0.34, IH=0.5;     // board plane, leftmost slot, icon spacing, icon height
+
+// draw a run of ISOTYPE figures (full icons + a final left-cropped partial) starting at an icon offset
+function run(g, startOff, valueIcons, color, opacity, rowY){
+  let rem=valueIcons, i=0;
+  while(rem>0.005){
+    const frac=Math.min(rem,1);
+    g.add(at(pictoSprite('person',color,IH,opacity,frac), X0+(startOff+i)*SP, rowY, Z));
+    rem-=1; i++;
+  }
+}
+// one contested mass row: solid for the low estimate, faded for the disputed remainder
+function massRow(g, rowY, solidColor, low, high, title){
+  run(g, 0, low/UNIT, solidColor, 1, rowY);
+  run(g, low/UNIT, (high-low)/UNIT, GHOST, 0.4, rowY);
+  g.add(at(labelSprite(title,0.115,'#f3e6cf','rgba(20,18,16,.8)'), 0.15, rowY+0.34, Z));
+}
+
+function makeContent(){
+  const g=new THREE.Group();
+  g.add(at(labelSprite('Three gatherings · 13–14 May 1933 · three ways of being counted',0.15,'#f3d9b0','rgba(20,18,16,.82)'),0.1,2.78,Z));
+
+  // 1 — Schönbrunn rally (Heimwehr): 20,000 solid → 40,000 contested
+  massRow(g, 2.05, SLATE, 20000, 40000, 'Schönbrunn »Türkenbefreiungsfeier« — 20,000–40,000 (contested)');
+  // 2 — Engelmann Arena (NSDAP): 11,000 solid → 20,000 contested
+  massRow(g, 1.30, STEEL, 11000, 20000, 'Engelmann Arena · NSDAP — 11,000–20,000 (contested)');
+
+  // 3 — Gemeindebauten »Freiheitsfeiern« (Social-Democratic): ~50 dispersed sites, NOT summed
+  const rnd=mulberry32(1933);
+  for(let i=0;i<46;i++){ const x=-1.55+rnd()*3.05, y=0.42+rnd()*0.46; g.add(at(pictoSprite('bau',RED,0.2,0.95), x, y, Z)); }
+  g.add(at(labelSprite('Gemeindebauten »Freiheitsfeiern« — ~50 sites across the city, no single headcount',0.115,'#f3e6cf','rgba(20,18,16,.8)'),0.15,0.92,Z));
+
+  // legend + source
+  g.add(at(labelSprite('1 figure = 5,000 people · solid = lower/official estimate · faded = claimed only by the organisers',0.1,'#cdd3c4','rgba(20,18,16,.7)'),0.1,0.2,Z));
+  g.add(at(labelSprite('counts contested between Heimwehr / Nazi / opposition & police press — Ganahl 2022',0.085,'#9aa08f','rgba(20,18,16,.6)'),0.1,0.04,Z));
+  return g;
+}
+
+// explicit counter-mediation framing (toggle) — the register IS the argument, made legible (BRIEF §"Interaction sketch" 4)
+function makeFraming(){
+  const g=new THREE.Group();
+  const lines=[
+    'ISOTYPE = Otto Neurath’s Red Vienna »Bildstatistik«,',
+    'a democratic visual language the Austrofascists',
+    'suppressed in 1934. Turned here on the regime’s own',
+    'rally: counted as contestation, not triumph —',
+    'the hollow figures are the propaganda; the scattered',
+    'blocks are the counter-public it was built to overshadow.',
+  ];
+  lines.forEach((t,i)=> g.add(at(labelSprite(t,0.12,'#e9e3d5','rgba(70,50,44,.9)'), 0, 2.3-i*0.26, -1.7)));
+  return g;
+}
+
+function onSelect(){
+  if(placedAR || !reticle.visible) return;
+  placedAR=makeContent();
+  placedAR.position.setFromMatrixPosition(reticle.matrix);
+  placedAR.rotation.y=new THREE.Euler().setFromRotationMatrix(reticle.matrix).y;
+  scene.add(placedAR);
+  hint.textContent='Placed. Step back and read it against the garden · drag to rotate · pinch to zoom.';
+  framingBtn.style.display='block';
+}
+function toggleFraming(){
+  const target=(cameraAR&&cameraAR.active&&cameraAR.content)||placedAR||browserContent; if(!target) return;
+  if(framingGroup){ target.remove(framingGroup); framingGroup=null; framingBtn.textContent='ℹ Framing'; }
+  else { framingGroup=makeFraming(); target.add(framingGroup); framingBtn.textContent='✕ hide framing'; }
+}
+
+function render(_,frame){
+  if(frame){
+    const refSpace=renderer.xr.getReferenceSpace(), session=renderer.xr.getSession();
+    if(!hitTestSourceRequested){
+      hitTestSourceRequested=true;
+      session.requestReferenceSpace('viewer').then(vs=>session.requestHitTestSource({space:vs})).then(s=>hitTestSource=s);
+      session.addEventListener('end',()=>{hitTestSourceRequested=false;hitTestSource=null;});
+    }
+    if(hitTestSource){
+      const hits=frame.getHitTestResults(hitTestSource);
+      if(hits.length && !placedAR){ reticle.visible=true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
+      else reticle.visible=false;
+    }
+  } else if(cameraAR && cameraAR.active){ cameraAR.update(); }
+  else if(controls){ controls.update(); }
+  renderer.render(scene,camera);
+}
+
+// ── AR framing gestures: 1-finger drag = rotate, pinch = zoom the placed content ──
+let _rx=null,_pinch=null,_bRot=0,_bScale=1;
+function arObj(){ return (renderer && renderer.xr.isPresenting && placedAR) ? placedAR : null; }
+function _td(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+addEventListener('touchstart',e=>{ const o=arObj(); if(!o) return;
+  if(e.touches.length===1){ _rx=e.touches[0].clientX; _bRot=o.rotation.y; _pinch=null; }
+  else if(e.touches.length>=2){ _pinch=_td(e.touches); _bScale=o.scale.x; _rx=null; } },{passive:true});
+addEventListener('touchmove',e=>{ const o=arObj(); if(!o) return;
+  if(e.touches.length===1 && _rx!=null){ o.rotation.y=_bRot+(e.touches[0].clientX-_rx)*0.01; }
+  else if(e.touches.length>=2 && _pinch!=null){ o.scale.setScalar(Math.max(0.2,Math.min(6,_bScale*_td(e.touches)/_pinch))); } },{passive:true});
+addEventListener('touchend',()=>{ _rx=null; _pinch=null; },{passive:true});
+</script>
+</body>
+</html>
