@@ -5,38 +5,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>P2 — Three gatherings, one contested count (WebXR + browser fallback)</title>
 <!--
-  P2 SIBLING — the CONTESTED-MAGNITUDE board, as distinct from webxr.html / walk-webxr.html
-  (which deliberately BLANK the 14 May attendance and count machinery, not crowds). This
-  variant makes the opposite, riskier bet the BRIEF leaves open: it brings crowd magnitude
-  back — but ONLY as contestation, never as a triumphal total. Three gatherings on
-  13–14 May 1933 read as an ISOTYPE board you OVERSEE (read, don't inhabit):
-    1. Schönbrunn  — »Türkenbefreiungsfeier« (Heimwehr/Austrofascist), 20,000–40,000 CONTESTED
-    2. Engelmann Arena — NSDAP commemoration, 11,000–20,000 CONTESTED
-    3. Gemeindebauten — »Freiheitsfeiern« (Social-Democratic), ~50 dispersed sites, NO headcount
+  P2 SIBLING — the CONTESTED-MAGNITUDE count, laid across the GROUND (not a floating board).
+  The point is NOT "a chart in XR": it is that the count sits ON the parterre it refers to, so
+  you stand at the head of it and walk its length. Each gathering on 13–14 May 1933 becomes a
+  LINE of standing ISOTYPE figures (foot on the real floor, ~1:1) receding down the garden — the
+  line's REACH across the ground is the magnitude:
+    1. Schönbrunn  »Türkenbefreiungsfeier« (Heimwehr/Austrofascist) — 20,000–40,000 CONTESTED
+    2. Engelmann Arena · NSDAP commemoration — 11,000–20,000 CONTESTED
+    3. Gemeindebauten »Freiheitsfeiern« (Social-Democratic) — ~50 dispersed sites, NO headcount
 
   Honesty / ethics (BRIEF.md §"Ethical constraint check"):
-    • 1 figure = 5,000 people. SOLID = lower/official estimate; FADED = the extra figure
-      claimed only by the organisers — the hollow zone IS the propaganda, shown as unfilled.
-    • The Social-Democratic response is NOT summed into a bar: ~50 scattered blocks, because
-      it had no single headcount BY DESIGN. The difference in FORM carries the politics — and
-      keeps the centralised fascist mass from reading as "the only real thing."
-    • Counted this way the board is COUNTER-MEDIATION, not a monument to scale: contestation +
-      the counter-public the rally was built to overshadow, in Neurath's suppressed Red Vienna
-      idiom turned back on the regime. (Tap "Framing" to make the argument explicit in-scene.)
-    • Numbers are Ganahl, Campus Medius (2022): Schönbrunn p.~166; Engelmann p.69; freedom
-      celebrations / listener strike pp.~28–31,59,85. No figure is invented.
-  DUAL MODE like the siblings; SCHEMATIC placement (tap-to-place), not geo-anchored.
+    • 1 figure = 5,000 people (sparse, abstract markers — NOT a reenacted crowd). SOLID = lower/
+      official estimate; FADED = the extra claimed only by the organisers — the hollow TAIL of the
+      line IS the propaganda, shown unfilled.
+    • The Social-Democratic response is NOT a line: ~50 building-markers scattered across the lawn,
+      because it had no single headcount BY DESIGN. The difference in FORM carries the politics and
+      keeps the centralised fascist count from reading as "the only real thing."
+    • Counted this way it is COUNTER-MEDIATION, not a monument to scale — contestation + the counter-
+      public the rally was built to overshadow, in Neurath's suppressed Red Vienna idiom turned on the
+      regime. (Tap "Framing" to make the argument explicit in-scene.)
+    • Numbers: Ganahl, Campus Medius (2022) — Schönbrunn p.~166; Engelmann p.69; freedom celebrations
+      pp.~28–31,59,85. No figure is invented.
+  DUAL MODE like the siblings; SCHEMATIC placement (tap-to-place on a detected floor), not geo-anchored.
 -->
 <style>
-  html,body{margin:0;height:100%;background:#14110e;color:#e9e3d5;font:14px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden}
+  html,body{margin:0;height:100%;background:#47503c;color:#e9e3d5;font:14px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden}
   #overlay{position:fixed;inset:0;pointer-events:none;z-index:5}
   #panel{position:absolute;left:12px;right:12px;top:12px;background:rgba(20,18,16,.66);padding:10px 12px;border-radius:8px}
-  #panel b{color:#c98}
+  #panel b{color:#f3d9b0}
   #hint{position:absolute;left:12px;right:12px;bottom:92px;text-align:center;background:rgba(20,18,16,.6);padding:8px 12px;border-radius:8px}
   #framingBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;display:none;pointer-events:auto;
            background:#5d7382;color:#e9e3d5;border:none;border-radius:6px;padding:10px 16px;font:600 14px system-ui}
   #camBtn{position:absolute;left:12px;bottom:150px;pointer-events:auto;background:rgba(20,18,16,.85);color:#e9e3d5;
           border:1px solid #5d7382;border-radius:6px;padding:10px 14px;font:600 14px system-ui}
+  #note{position:absolute;left:12px;right:12px;bottom:12px;text-align:center;font-size:11.5px;color:#cdd3c4;background:rgba(20,18,16,.5);padding:6px 12px;border-radius:8px}
   .warn{color:#ffc266}
 </style>
 </head>
@@ -45,7 +47,8 @@
   <div id="panel"><b>Three gatherings, one contested count</b> — <span id="msg">loading…</span></div>
   <button id="framingBtn">ℹ Framing</button>
   <button id="camBtn">📷 Camera AR</button>
-  <div id="hint" hidden>Point at the ground, tap to place the board. Then step back and read it against the garden.</div>
+  <div id="hint" hidden>Point at the ground, tap to lay the count on the parterre at 1:1. Then walk its length.</div>
+  <div id="note">1 figure = 5,000 people · solid = lower estimate · faded tail = organisers' claim (contested) · Ganahl 2022</div>
 </div>
 
 <script type="importmap">
@@ -61,14 +64,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { setupCameraAR } from '../libs/camera-ar.js';
 
 const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), framingBtn=document.getElementById('framingBtn'), camBtn=document.getElementById('camBtn');
-const PAPER='#e9e3d5', BRICK='#9b3a2e', STEEL='#3a3a3a', SLATE='#5d7382', GHOST='#b3ab99', RED='#b3322c';
+const PAPER='#e9e3d5', SLATE='#5d7382', STEEL='#3a3a3a', GHOST='#b3ab99', RED='#b3322c';
 const UNIT=5000;                              // people per ISOTYPE figure
+const FH=1.65, SPZ=3.0;                        // figure height (m), spacing along the ground (m)
 
 // deterministic PRNG (mulberry32) — fixed seed so the dispersed sites never drift
 function mulberry32(a){return function(){a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
 
 const SYM={
-  // ISOTYPE figure (same glyph as the siblings) + a Gemeindebau block with a flag (a »Freiheitsfeier« site)
   person:['<circle cx="10" cy="5" r="4.4"/><path d="M10 10C5.5 10 4 13 4 18L4 30 7.5 30 7.5 21 12.5 21 12.5 30 16 30 16 18C16 13 14.5 10 10 10Z"/>',20,30],
   bau:['<rect x="3.4" y="2" width="1.3" height="9"/><path d="M4.7 2.4 10.7 4.2 4.7 6Z"/><rect x="4" y="11" width="13" height="17"/>',22,30],
 };
@@ -83,8 +86,8 @@ init();
 
 async function init(){
   scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 80);
-  camera.position.set(0,1.6,3.4);
+  camera=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 300);   // lines run ~30 m deep
+  camera.position.set(0,3,10);                                                 // near eye-level, looking down the parterre
   scene.add(new THREE.HemisphereLight(0xffffff,0x99a,1.4));
 
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
@@ -93,9 +96,9 @@ async function init(){
   document.body.appendChild(renderer.domElement);
 
   controls=new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0,1.4,-2.4); controls.enableDamping=true; controls.update();
+  controls.target.set(0,0.8,-13); controls.enableDamping=true; controls.update();
 
-  grid=new THREE.GridHelper(16,32,0x6b5d44,0x342d22); scene.add(grid);
+  grid=new THREE.GridHelper(120,120,0x6b5d44,0x342d22); scene.add(grid);
 
   const ring=new THREE.RingGeometry(0.07,0.09,32).rotateX(-Math.PI/2);
   reticle=new THREE.Mesh(ring,new THREE.MeshBasicMaterial({color:0x9b3a2e}));
@@ -108,20 +111,22 @@ async function init(){
       hint.hidden=false; hint.textContent='Camera AR — rotate phone to look · drag to rotate · pinch to zoom.'; framingBtn.style.display='block'; },
     onExit: ()=>{ enterBrowser(); } });
 
-  let arOK=false;
-  if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
-  if(arOK){
-    document.body.appendChild(ARButton.createButton(renderer,{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}}));
-    msg.innerHTML='browser preview below — or tap <b>Start AR</b> (Android).';
-  } else {
-    msg.innerHTML='<span class="warn">No WebXR AR here</span> — browser preview (drag to look, scroll to zoom). Real AR needs Android + Chrome.';
-  }
-
+  // show the browser preview immediately — do NOT block first render on the AR-support probe
   enterBrowser();
   renderer.xr.addEventListener('sessionstart', enterAR);
   renderer.xr.addEventListener('sessionend', enterBrowser);
   addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
   renderer.setAnimationLoop(render);
+
+  // then probe AR support (can be slow / hang on some engines) and offer Start AR if available
+  let arOK=false;
+  if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
+  if(arOK){
+    document.body.appendChild(ARButton.createButton(renderer,{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}}));
+    msg.innerHTML='browser preview below — or tap <b>Start AR</b> (Android) and walk the count.';
+  } else {
+    msg.innerHTML='<span class="warn">No WebXR AR here</span> — browser preview (drag to look, scroll to zoom). Real walk-through needs Android + Chrome.';
+  }
 }
 
 function enterBrowser(){
@@ -136,7 +141,7 @@ function enterAR(){
   grid.visible=false; controls.enabled=false; hint.hidden=false; framingGroup=null;
   pageBG('transparent');
   framingBtn.style.display='none'; framingBtn.textContent='ℹ Framing';
-  msg.textContent='AR active — point at the ground, tap to place the board.';
+  msg.textContent='AR active — point at the ground, tap to lay the count on it.';
 }
 
 function pictoSprite(symKey,color,heightM,opacity=1,clipFrac=1){
@@ -150,7 +155,7 @@ function pictoSprite(symKey,color,heightM,opacity=1,clipFrac=1){
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,opacity,depthWrite:false}));
   sp.scale.set(heightM*w/h,heightM,1); return sp;
 }
-function labelSprite(text,heightM=0.16,fg='#e9e3d5',bg='rgba(20,18,16,.82)'){
+function labelSprite(text,heightM=0.5,fg='#e9e3d5',bg='rgba(20,18,16,.82)'){
   const f=44,pad=18,c=document.createElement('canvas'),x=c.getContext('2d');
   x.font=`600 ${f}px Helvetica,Arial,sans-serif`;
   const w=Math.ceil(x.measureText(text).width)+pad*2,h=f+pad*2; c.width=w;c.height=h;
@@ -162,42 +167,39 @@ function labelSprite(text,heightM=0.16,fg='#e9e3d5',bg='rgba(20,18,16,.82)'){
 }
 function rr(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
 function at(o,x,y,z){o.position.set(x,y,z);return o;}
+// place a centred sprite of height h with its FOOT on the ground (y=h/2)
+function foot(o,x,z,h){o.position.set(x,h/2,z);return o;}
 
-const Z=-2.6, X0=-1.25, SP=0.34, IH=0.5;     // board plane, leftmost slot, icon spacing, icon height
-
-// draw a run of ISOTYPE figures (full icons + a final left-cropped partial) starting at an icon offset
-function run(g, startOff, valueIcons, color, opacity, rowY){
+// a run of standing figures receding down the ground from z0, full icons + a final left-cropped partial
+function laneRun(g, x, z0, startOff, valueIcons, color, opacity){
   let rem=valueIcons, i=0;
   while(rem>0.005){
     const frac=Math.min(rem,1);
-    g.add(at(pictoSprite('person',color,IH,opacity,frac), X0+(startOff+i)*SP, rowY, Z));
+    g.add(foot(pictoSprite('person',color,FH,opacity,frac), x, z0-(startOff+i)*SPZ, FH));
     rem-=1; i++;
   }
 }
-// one contested mass row: solid for the low estimate, faded for the disputed remainder
-function massRow(g, rowY, solidColor, low, high, title){
-  run(g, 0, low/UNIT, solidColor, 1, rowY);
-  run(g, low/UNIT, (high-low)/UNIT, GHOST, 0.4, rowY);
-  g.add(at(labelSprite(title,0.115,'#f3e6cf','rgba(20,18,16,.8)'), 0.15, rowY+0.34, Z));
+// one contested gathering: a line of figures whose reach across the ground is the magnitude
+function lane(g, x, color, low, high, title){
+  const z0=-4;
+  laneRun(g, x, z0, 0, low/UNIT, color, 1);                       // solid = lower/official estimate
+  laneRun(g, x, z0, low/UNIT, (high-low)/UNIT, GHOST, 0.4);       // faded tail = disputed remainder
+  g.add(at(labelSprite(title,0.62,'#f3e6cf','rgba(20,18,16,.86)'), x, FH+1.4, z0+0.4));
 }
 
 function makeContent(){
   const g=new THREE.Group();
-  g.add(at(labelSprite('Three gatherings · 13–14 May 1933 · three ways of being counted',0.15,'#f3d9b0','rgba(20,18,16,.82)'),0.1,2.78,Z));
+  g.add(at(labelSprite('Three gatherings · 13–14 May 1933 · the count laid on the ground it names',0.7,'#f3d9b0','rgba(20,18,16,.86)'),0,4.4,-3));
 
-  // 1 — Schönbrunn rally (Heimwehr): 20,000 solid → 40,000 contested
-  massRow(g, 2.05, SLATE, 20000, 40000, 'Schönbrunn »Türkenbefreiungsfeier« — 20,000–40,000 (contested)');
-  // 2 — Engelmann Arena (NSDAP): 11,000 solid → 20,000 contested
-  massRow(g, 1.30, STEEL, 11000, 20000, 'Engelmann Arena · NSDAP — 11,000–20,000 (contested)');
+  lane(g, -8, SLATE, 20000, 40000, 'Schönbrunn · 20–40k contested');
+  lane(g,  0, STEEL, 11000, 20000, 'Engelmann · 11–20k contested');
 
-  // 3 — Gemeindebauten »Freiheitsfeiern« (Social-Democratic): ~50 dispersed sites, NOT summed
+  // Gemeindebauten — ~50 building-markers scattered across the lawn (dispersed, not summed)
   const rnd=mulberry32(1933);
-  for(let i=0;i<46;i++){ const x=-1.55+rnd()*3.05, y=0.42+rnd()*0.46; g.add(at(pictoSprite('bau',RED,0.2,0.95), x, y, Z)); }
-  g.add(at(labelSprite('Gemeindebauten »Freiheitsfeiern« — ~50 sites across the city, no single headcount',0.115,'#f3e6cf','rgba(20,18,16,.8)'),0.15,0.92,Z));
+  for(let i=0;i<46;i++){ const x=5+rnd()*9, z=-4-rnd()*22; g.add(foot(pictoSprite('bau',RED,1.3,0.95), x, z, 1.3)); }
+  g.add(at(labelSprite('Gemeindebauten · ~50 sites · no headcount',0.62,'#f3e6cf','rgba(20,18,16,.86)'),10,3.0,-4));
 
-  // legend + source
-  g.add(at(labelSprite('1 figure = 5,000 people · solid = lower/official estimate · faded = claimed only by the organisers',0.1,'#cdd3c4','rgba(20,18,16,.7)'),0.1,0.2,Z));
-  g.add(at(labelSprite('counts contested between Heimwehr / Nazi / opposition & police press — Ganahl 2022',0.085,'#9aa08f','rgba(20,18,16,.6)'),0.1,0.04,Z));
+  g.add(at(labelSprite('1 figure = 5,000 · solid = lower estimate · faded = organisers’ claim (contested) — Ganahl 2022',0.5,'#cdd3c4','rgba(20,18,16,.72)'),0,0.85,-0.5));
   return g;
 }
 
@@ -209,10 +211,10 @@ function makeFraming(){
     'a democratic visual language the Austrofascists',
     'suppressed in 1934. Turned here on the regime’s own',
     'rally: counted as contestation, not triumph —',
-    'the hollow figures are the propaganda; the scattered',
+    'the hollow tail is the propaganda; the scattered',
     'blocks are the counter-public it was built to overshadow.',
   ];
-  lines.forEach((t,i)=> g.add(at(labelSprite(t,0.12,'#e9e3d5','rgba(70,50,44,.9)'), 0, 2.3-i*0.26, -1.7)));
+  lines.forEach((t,i)=> g.add(at(labelSprite(t,0.5,'#e9e3d5','rgba(70,50,44,.92)'), 0, 4.0-i*0.62, -6)));
   return g;
 }
 
@@ -222,7 +224,7 @@ function onSelect(){
   placedAR.position.setFromMatrixPosition(reticle.matrix);
   placedAR.rotation.y=new THREE.Euler().setFromRotationMatrix(reticle.matrix).y;
   scene.add(placedAR);
-  hint.textContent='Placed. Step back and read it against the garden · drag to rotate · pinch to zoom.';
+  hint.textContent='Placed. Walk the length of each line · drag to rotate · pinch to zoom.';
   framingBtn.style.display='block';
 }
 function toggleFraming(){
