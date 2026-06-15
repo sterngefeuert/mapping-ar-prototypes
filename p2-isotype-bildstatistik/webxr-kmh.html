@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>P2→KMH — Bildstatistik at Karl-Marx-Hof (WebXR + browser fallback)</title>
+<!--
+  P2 RE-SEAT at the KARL-MARX-HOF. Same ISOTYPE chart-form as the Schönbrunn P2, moved onto
+  Red Vienna's monument, where the valence flips: at Schönbrunn the diagrammatic register
+  REFUSES the perpetrator's spectacle; here it RESTORES what was built — in Neurath's own
+  Vienna Method, the suppressed Red-Vienna idiom returned to the ground it described.
+  DUAL MODE:
+    • Android + Chrome (ARCore): tap "Start AR", point at ground, tap to place; walk among it.
+    • Any other browser: orbit preview (drag to look, scroll/pinch to zoom).
+  HONESTY (see BRIEF-RESEAT-KMH.md + notes/sources/karl-marx-hof.md):
+    • one pictogram = a VERIFIED count, with its unit keyed; estimates marked "≈".
+    • it counts the HOUSING PROGRAMME + the Feb-1934 REPRESSION (both verified),
+      NOT the bombardment.
+    • the SHELLING CASUALTIES are a DELIBERATE BLANK — those figures are contested
+      (Bauer 2019, primary text unread); ISOTYPE counts only the verified.
+    • tap-to-place, not geo-anchored (a sketch; on-site GPS anchor is future work).
+-->
+<style>
+  html,body{margin:0;height:100%;background:#14110e;color:#e9e3d5;font:14px/1.5 -apple-system,system-ui,sans-serif;overflow:hidden}
+  #overlay{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #panel{position:absolute;left:12px;right:12px;top:12px;background:rgba(20,18,16,.66);padding:10px 12px;border-radius:8px}
+  #panel b{color:#d2685a}
+  #hint{position:absolute;left:12px;right:12px;bottom:92px;text-align:center;background:rgba(20,18,16,.6);padding:8px 12px;border-radius:8px}
+  #ruptureBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;display:none;pointer-events:auto;
+           background:#5d7382;color:#e9e3d5;border:none;border-radius:6px;padding:10px 16px;font:600 14px system-ui}
+  #camBtn{position:absolute;left:12px;bottom:150px;pointer-events:auto;background:rgba(20,18,16,.85);color:#e9e3d5;
+          border:1px solid #5d7382;border-radius:6px;padding:10px 14px;font:600 14px system-ui}
+  .warn{color:#ffc266}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div id="panel"><b>Bildstatistik in place — Karl-Marx-Hof</b> — <span id="msg">loading…</span></div>
+  <button id="ruptureBtn">＋ Feb 1934 rupture</button>
+  <button id="camBtn">📷 Camera AR</button>
+  <div id="hint" hidden>Point at the ground, tap to place the chart at 1:1. Read it by counting rows.</div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "../libs/three/three.module.js",
+  "three/addons/": "../libs/three/addons/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { setupCameraAR } from '../libs/camera-ar.js';
+
+const msg=document.getElementById('msg'), hint=document.getElementById('hint'), overlay=document.getElementById('overlay'), ruptureBtn=document.getElementById('ruptureBtn'), camBtn=document.getElementById('camBtn');
+const PAPER='#e9e3d5', RED='#b23a2e', STEEL='#5d7382', BONE='#cbb9a4', GHOST='#b3ab99';
+
+const SYM={
+  person:['<circle cx="10" cy="5" r="4.4"/><path d="M10 10C5.5 10 4 13 4 18L4 30 7.5 30 7.5 21 12.5 21 12.5 30 16 30 16 18C16 13 14.5 10 10 10Z"/>',20,30],
+  house:['<path d="M11 2 2 10 4 10 4 22 18 22 18 10 20 10Z"/>',22,24],
+  square:['<rect x="1" y="1" width="18" height="18"/>',20,20],
+};
+
+let renderer, scene, camera, controls, grid, reticle, controller;
+let hitTestSource=null, hitTestSourceRequested=false;
+let placedAR=null, browserContent=null, ruptureGroup=null, cameraAR=null;
+
+function pageBG(v){ document.documentElement.style.background=v; document.body.style.background=v; }
+
+init();
+
+async function init(){
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 80);
+  camera.position.set(0,1.7,3.0);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x99a,1.4));
+
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth,innerHeight); renderer.xr.enabled=true;
+  renderer.setClearColor(0x000000, 0);   // transparent canvas so the AR camera shows through
+  document.body.appendChild(renderer.domElement);
+
+  controls=new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,1.0,-2.2); controls.enableDamping=true; controls.update();
+
+  grid=new THREE.GridHelper(16,32,0x6b5d44,0x342d22); scene.add(grid);
+
+  const ring=new THREE.RingGeometry(0.07,0.09,32).rotateX(-Math.PI/2);
+  reticle=new THREE.Mesh(ring,new THREE.MeshBasicMaterial({color:0xb23a2e}));
+  reticle.matrixAutoUpdate=false; reticle.visible=false; scene.add(reticle);
+
+  controller=renderer.xr.getController(0); controller.addEventListener('select',onSelect); scene.add(controller);
+  ruptureBtn.addEventListener('click',toggleRupture);
+  cameraAR = setupCameraAR({ renderer, scene, camera, controls, button: camBtn, getContent: makeContent,
+    onEnter: ()=>{ if(browserContent){ scene.remove(browserContent); browserContent=null; } grid.visible=false; reticle.visible=false;
+      hint.hidden=false; hint.textContent='Camera AR — rotate phone to look · drag to rotate · pinch to zoom.'; ruptureBtn.style.display='block'; },
+    onExit: ()=>{ enterBrowser(); } });
+
+  let arOK=false;
+  if('xr' in navigator){ try{ arOK=await navigator.xr.isSessionSupported('immersive-ar'); }catch{} }
+  if(arOK){
+    document.body.appendChild(ARButton.createButton(renderer,{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:overlay}}));
+    msg.innerHTML='browser preview below — or tap <b>Start AR</b> (Android).';
+  } else {
+    msg.innerHTML='<span class="warn">No WebXR AR here</span> — browser preview (drag to look, scroll to zoom). Real AR needs Android + Chrome.';
+  }
+
+  enterBrowser();
+  renderer.xr.addEventListener('sessionstart', enterAR);
+  renderer.xr.addEventListener('sessionend', enterBrowser);
+  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  renderer.setAnimationLoop(render);
+}
+
+function enterBrowser(){
+  if(placedAR){ scene.remove(placedAR); placedAR=null; }
+  reticle.visible=false; grid.visible=true; controls.enabled=true; hint.hidden=true; ruptureGroup=null;
+  pageBG('');                              // restore opaque page background for the browser preview
+  if(!browserContent){ browserContent=makeContent(); browserContent.position.set(0,0,0); scene.add(browserContent); }
+  ruptureBtn.style.display='block'; ruptureBtn.textContent='＋ Feb 1934 rupture';
+}
+function enterAR(){
+  if(browserContent){ scene.remove(browserContent); browserContent=null; }
+  grid.visible=false; controls.enabled=false; hint.hidden=false; ruptureGroup=null;
+  pageBG('transparent');                   // let the AR camera show through
+  ruptureBtn.style.display='none'; ruptureBtn.textContent='＋ Feb 1934 rupture';
+  msg.textContent='AR active — point at the ground, tap to place.';
+}
+
+function pictoSprite(symKey,color,heightM,opacity=1){
+  const [inner,w,h]=SYM[symKey];
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${w*8}" height="${h*8}" viewBox="0 0 ${w} ${h}" fill="${color}" color="${color}">${inner}</svg>`;
+  const tex=new THREE.Texture(); tex.colorSpace=THREE.SRGBColorSpace;
+  const img=new Image(); img.onload=()=>{const c=document.createElement('canvas');c.width=img.width;c.height=img.height;c.getContext('2d').drawImage(img,0,0);tex.image=c;tex.needsUpdate=true;};
+  img.src='data:image/svg+xml;base64,'+btoa(svg);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,opacity,depthWrite:false}));
+  sp.scale.set(heightM*w/h,heightM,1); return sp;
+}
+function labelSprite(text,heightM=0.16,fg='#e9e3d5',bg='rgba(20,18,16,.82)'){
+  const f=44,pad=18,c=document.createElement('canvas'),x=c.getContext('2d');
+  x.font=`600 ${f}px Helvetica,Arial,sans-serif`;
+  const w=Math.ceil(x.measureText(text).width)+pad*2,h=f+pad*2; c.width=w;c.height=h;
+  x.font=`600 ${f}px Helvetica,Arial,sans-serif`; x.fillStyle=bg; rr(x,0,0,w,h,14); x.fill();
+  x.fillStyle=fg; x.textBaseline='middle'; x.fillText(text,pad,h/2+2);
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));
+  sp.scale.set(heightM*w/h,heightM,1); return sp;
+}
+function rr(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
+function at(o,x,y,z){o.position.set(x,y,z);return o;}
+
+// lay a count of one pictogram as a centered ISOTYPE row (wraps if long)
+function rowOf(g,symKey,n,color,opts){
+  const {y=1,z=-2.2,per=0.26,perRow=12,rowGap=0.42,h=0.34,opacity=1}=opts||{};
+  for(let i=0;i<n;i++){
+    const r=Math.floor(i/perRow), k=i%perRow;
+    const inRow=Math.min(perRow, n-r*perRow);
+    const x0=-((inRow-1)/2)*per;
+    g.add(at(pictoSprite(symKey,color,h,opacity), x0+k*per, y-r*rowGap, z));
+  }
+}
+
+// ── the programme: what Red Vienna built (default layer) ──
+function makeContent(){
+  const g=new THREE.Group();
+  g.add(at(labelSprite('Karl-Marx-Hof · Red Vienna in its own idiom',0.18),0,2.05,-2.2));
+  g.add(at(labelSprite("ISOTYPE — Neurath's suppressed Vienna method, on the ground it described",0.1,'#2a2723','rgba(233,227,213,.9)'),0,1.86,-2.2));
+
+  rowOf(g,'person',10,RED,{y:1.5,z:-2.2});
+  g.add(at(labelSprite('≈5,000 residents — 1 ▸ = 500 (verified)',0.1,'#e9e3d5','rgba(178,58,46,.85)'),0,1.69,-2.2));
+
+  rowOf(g,'house',7,RED,{y:1.04,z:-2.2});
+  g.add(at(labelSprite('1,382 apartments — 1 ⌂ = 200 (verified)',0.1,'#e9e3d5','rgba(178,58,46,.85)'),0,1.22,-2.2));
+
+  for(let i=0;i<5;i++) g.add(at(pictoSprite('square',RED,0.3,i===0?1:0.16),-0.68+i*0.34,0.62,-2.2));
+  g.add(at(labelSprite('≈1/5 of the site built — the rest, gardens & courtyards (verified)',0.1,'#2a2723','rgba(233,227,213,.9)'),0,0.83,-2.2));
+
+  g.add(at(labelSprite("The same chart-form that refuses the rally's spectacle, here restores what was built.",0.1,'#6c6655','rgba(233,227,213,.85)'),0,0.5,0.6));
+  return g;
+}
+
+// ── the rupture: what Feb 1934 did to it (toggle layer) ──
+function makeRupture(){
+  const g=new THREE.Group();
+  g.add(at(labelSprite('FEB 1934 — THE RUPTURE',0.16,'#e9e3d5','rgba(93,115,130,.92)'),0,1.95,-3.7));
+  rowOf(g,'person',12,STEEL,{y:1.45,z:-3.7});
+  g.add(at(labelSprite('1,200+ imprisoned — 1 ▸ = 100 (verified)',0.1,'#e9e3d5','rgba(93,115,130,.85)'),0,1.63,-3.7));
+  rowOf(g,'person',9,BONE,{y:1.0,z:-3.7});
+  g.add(at(labelSprite('9 Schutzbündler executed — 1 ▸ = 1 (verified)',0.1,'#2a2723','rgba(203,185,164,.92)'),0,1.18,-3.7));
+  g.add(at(labelSprite('Shelling casualties — left blank · figures contested (Bauer 2019) · ISOTYPE counts only the verified',0.092,'#2a2723','rgba(233,227,213,.92)'),0,0.66,-3.7));
+  g.add(at(labelSprite("Karl-Marx-Hof → renamed 'Heiligenstädter Hof' · SDAP & Schutzbund banned",0.092,'#e9e3d5','rgba(93,115,130,.8)'),0,0.4,-3.7));
+  return g;
+}
+
+function onSelect(){
+  if(placedAR || !reticle.visible) return;
+  placedAR=makeContent();
+  placedAR.position.setFromMatrixPosition(reticle.matrix);
+  placedAR.rotation.y=new THREE.Euler().setFromRotationMatrix(reticle.matrix).y;
+  scene.add(placedAR);
+  hint.textContent='Placed. Walk among it · drag to rotate · pinch to zoom.';
+  ruptureBtn.style.display='block';
+}
+function toggleRupture(){
+  const target=(cameraAR&&cameraAR.active&&cameraAR.content)||placedAR||browserContent; if(!target) return;
+  if(ruptureGroup){ target.remove(ruptureGroup); ruptureGroup=null; ruptureBtn.textContent='＋ Feb 1934 rupture'; }
+  else { ruptureGroup=makeRupture(); target.add(ruptureGroup); ruptureBtn.textContent='－ hide Feb 1934'; }
+}
+
+function render(_,frame){
+  if(frame){
+    const refSpace=renderer.xr.getReferenceSpace(), session=renderer.xr.getSession();
+    if(!hitTestSourceRequested){
+      hitTestSourceRequested=true;
+      session.requestReferenceSpace('viewer').then(vs=>session.requestHitTestSource({space:vs})).then(s=>hitTestSource=s);
+      session.addEventListener('end',()=>{hitTestSourceRequested=false;hitTestSource=null;});
+    }
+    if(hitTestSource){
+      const hits=frame.getHitTestResults(hitTestSource);
+      if(hits.length && !placedAR){ reticle.visible=true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
+      else reticle.visible=false;
+    }
+  } else if(cameraAR && cameraAR.active){ cameraAR.update(); }
+  else if(controls){ controls.update(); }
+  renderer.render(scene,camera);
+}
+
+// ── AR framing gestures: 1-finger drag = rotate, pinch = zoom the placed content ──
+let _rx=null,_pinch=null,_bRot=0,_bScale=1;
+function arObj(){ return (renderer && renderer.xr.isPresenting && placedAR) ? placedAR : null; }
+function _td(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+addEventListener('touchstart',e=>{ const o=arObj(); if(!o) return;
+  if(e.touches.length===1){ _rx=e.touches[0].clientX; _bRot=o.rotation.y; _pinch=null; }
+  else if(e.touches.length>=2){ _pinch=_td(e.touches); _bScale=o.scale.x; _rx=null; } },{passive:true});
+addEventListener('touchmove',e=>{ const o=arObj(); if(!o) return;
+  if(e.touches.length===1 && _rx!=null){ o.rotation.y=_bRot+(e.touches[0].clientX-_rx)*0.01; }
+  else if(e.touches.length>=2 && _pinch!=null){ o.scale.setScalar(Math.max(0.2,Math.min(6,_bScale*_td(e.touches)/_pinch))); } },{passive:true});
+addEventListener('touchend',()=>{ _rx=null; _pinch=null; },{passive:true});
+</script>
+</body>
+</html>
